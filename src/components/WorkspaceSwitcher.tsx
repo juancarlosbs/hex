@@ -1,0 +1,140 @@
+import React, { useEffect, useRef, useState } from "react";
+import { ChevronDown, Check, Layers, Plus, Search, Settings2 } from "lucide-react";
+import { cva, type VariantProps } from "class-variance-authority";
+import { cn } from "../lib/utils";
+
+const triggerVariants = cva(
+  "flex items-center justify-between gap-2 w-[162px] rounded-[4px] cursor-pointer shrink-0 border transition-colors select-none px-[10px] py-[6px]",
+  {
+    variants: {
+      state: {
+        idle: "bg-secondary border-border hover:bg-secondary/80",
+        open: "bg-secondary border-border",
+      },
+    },
+    defaultVariants: { state: "idle" },
+  }
+);
+
+interface WorkspaceSwitcherProps extends VariantProps<typeof triggerVariants> {
+  workspaceName: string;
+  workspaces: string[];
+  onSelect: (name: string) => void;
+  className?: string;
+}
+
+export function WorkspaceSwitcher({
+  workspaceName,
+  workspaces,
+  onSelect,
+  className,
+}: WorkspaceSwitcherProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  const filtered = workspaces.filter((ws) =>
+    ws.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div
+      ref={ref}
+      className="relative"
+      style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+    >
+      {/* Trigger */}
+      <div
+        className={cn(triggerVariants({ state: open ? "open" : "idle" }), className)}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <Layers size={14} className="text-muted shrink-0" />
+          <span className="text-[13px] font-medium text-foreground truncate">
+            {workspaceName}
+          </span>
+        </div>
+        <ChevronDown
+          size={14}
+          className={cn("text-muted shrink-0 transition-transform", open && "rotate-180")}
+        />
+      </div>
+
+      {/* Dropdown */}
+      {open && (
+        <div className="absolute top-full left-0 mt-1 w-[220px] rounded-md bg-[#1A1A1A] border border-[#2E2E2E] shadow-lg z-50 overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between px-3 py-[10px]">
+            <span className="text-[11px] font-semibold text-muted uppercase tracking-[0.5px]">
+              Workspaces
+            </span>
+            <Plus size={14} className="text-muted cursor-pointer hover:text-foreground" />
+          </div>
+
+          {/* Search */}
+          <div className="px-3 pb-2">
+            <div className="flex items-center gap-[6px] bg-[#2E2E2E] border border-[#2E2E2E] rounded-md px-2 py-[6px]">
+              <Search size={12} className="text-muted shrink-0" />
+              <input
+                className="flex-1 bg-transparent text-[12px] text-foreground placeholder:text-muted outline-none"
+                placeholder="Search workspaces…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* List */}
+          <div className="flex flex-col gap-px px-[6px] pb-[6px]">
+            {filtered.map((ws) => {
+              const active = ws === workspaceName;
+              return (
+                <div
+                  key={ws}
+                  className={cn(
+                    "flex items-center justify-between gap-2 px-2 py-[7px] rounded-md cursor-pointer",
+                    active ? "bg-[#2a2a30]" : "hover:bg-[#2E2E2E]"
+                  )}
+                  onClick={() => {
+                    onSelect(ws);
+                    setOpen(false);
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Layers size={14} className={active ? "text-foreground" : "text-muted"} />
+                    <span
+                      className={cn(
+                        "text-[12px]",
+                        active ? "text-foreground font-semibold" : "text-muted font-normal"
+                      )}
+                    >
+                      {ws}
+                    </span>
+                  </div>
+                  {active && <Check size={13} className="text-foreground shrink-0" />}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center gap-[6px] px-3 py-2 border-t border-[#2E2E2E] cursor-pointer hover:bg-[#2E2E2E]">
+            <Settings2 size={13} className="text-muted" />
+            <span className="text-[12px] text-muted">Manage Workspaces</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

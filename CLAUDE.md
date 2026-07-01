@@ -2,6 +2,59 @@
 
 All code, comments, variable names, documentation, and responses must be written in English.
 
+## Component Conventions
+
+Components use [`class-variance-authority`](https://cva.style) (CVA) for variants and [`tailwind-merge`](https://github.com/dcastil/tailwind-merge) via the `cn()` utility (`src/lib/utils.ts`) for class merging.
+
+### Structure
+
+```tsx
+import { cva, type VariantProps } from "class-variance-authority";
+import { cn } from "../lib/utils";
+
+// 1. Define variants with cva — base classes + variant maps
+const buttonVariants = cva(
+  "flex items-center rounded-[4px] border cursor-pointer transition-colors select-none",
+  {
+    variants: {
+      size: {
+        sm: "px-[10px] py-[5px]",
+        default: "px-[12px] py-[7px]",
+      },
+      state: {
+        idle: "bg-secondary border-border hover:bg-secondary/80",
+        open: "bg-secondary border-border",
+      },
+    },
+    defaultVariants: {
+      size: "default",
+      state: "idle",
+    },
+  }
+);
+
+// 2. Extend VariantProps so consumers can pass variant props
+interface ButtonProps extends VariantProps<typeof buttonVariants> {
+  label: string;
+  className?: string;
+}
+
+// 3. Named export — use cn() to merge variants + className overrides
+export function Button({ label, size, state, className }: ButtonProps) {
+  return (
+    <div className={cn(buttonVariants({ size, state }), className)}>
+      {label}
+    </div>
+  );
+}
+```
+
+### Rules
+- Always use `cn()` — never string concatenate classes manually.
+- Variants go in CVA, one-off overrides go via `className` prop.
+- Always use named exports (no `export default`).
+- Dropdown open/close state: `useState` + `useEffect` with `pointerdown` listener on `document` for outside-click dismissal.
+
 ## Git Conventions
 
 **Commits** follow [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): description` — single line only, no body.

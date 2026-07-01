@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { ChevronDown, Check, Layers, Plus, Search, Settings2 } from "lucide-react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../lib/utils";
+import { useWorkspaceStore } from "../store/workspaceStore";
 
 const triggerVariants = cva(
   "flex items-center justify-between gap-2 w-[162px] rounded-[4px] cursor-pointer shrink-0 border transition-colors select-none px-[10px] py-[6px]",
@@ -17,36 +18,31 @@ const triggerVariants = cva(
 );
 
 interface WorkspaceSwitcherProps extends VariantProps<typeof triggerVariants> {
-  workspaceName: string;
-  workspaces: string[];
-  onSelect: (name: string) => void;
+  onAddWorkspace: () => void;
+  onManageWorkspaces: () => void;
   className?: string;
 }
 
-export function WorkspaceSwitcher({
-  workspaceName,
-  workspaces,
-  onSelect,
-  className,
-}: WorkspaceSwitcherProps) {
+export function WorkspaceSwitcher({ onAddWorkspace, onManageWorkspaces, className }: WorkspaceSwitcherProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+
+  const { workspaces, activeId, setActive } = useWorkspaceStore();
+  const active = workspaces.find((w) => w.id === activeId) ?? workspaces[0];
+  const filtered = workspaces.filter((w) => w.name.toLowerCase().includes(search.toLowerCase()));
 
   useEffect(() => {
     if (!open) return;
     function onPointerDown(e: PointerEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false);
+        setSearch("");
       }
     }
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
-
-  const filtered = workspaces.filter((ws) =>
-    ws.toLowerCase().includes(search.toLowerCase())
-  );
 
   return (
     <div
@@ -54,7 +50,6 @@ export function WorkspaceSwitcher({
       className="relative"
       style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
     >
-      {/* Trigger */}
       <div
         className={cn(triggerVariants({ state: open ? "open" : "idle" }), className)}
         onClick={() => setOpen((v) => !v)}
@@ -62,7 +57,7 @@ export function WorkspaceSwitcher({
         <div className="flex items-center gap-2 min-w-0">
           <Layers size={14} className="text-muted shrink-0" />
           <span className="text-[13px] font-medium text-foreground truncate">
-            {workspaceName}
+            {active?.name ?? "No Workspace"}
           </span>
         </div>
         <ChevronDown
@@ -71,18 +66,19 @@ export function WorkspaceSwitcher({
         />
       </div>
 
-      {/* Dropdown */}
       {open && (
         <div className="absolute top-full left-0 mt-1 w-[220px] rounded-md bg-[#1A1A1A] border border-[#2E2E2E] shadow-lg z-50 overflow-hidden">
-          {/* Header */}
           <div className="flex items-center justify-between px-3 py-[10px]">
             <span className="text-[11px] font-semibold text-muted uppercase tracking-[0.5px]">
               Workspaces
             </span>
-            <Plus size={14} className="text-muted cursor-pointer hover:text-foreground" />
+            <Plus
+              size={14}
+              className="text-muted cursor-pointer hover:text-foreground"
+              onClick={(e) => { e.stopPropagation(); setOpen(false); onAddWorkspace(); }}
+            />
           </div>
 
-          {/* Search */}
           <div className="px-3 pb-2">
             <div className="flex items-center gap-[6px] bg-[#2E2E2E] border border-[#2E2E2E] rounded-md px-2 py-[6px]">
               <Search size={12} className="text-muted shrink-0" />
@@ -95,41 +91,34 @@ export function WorkspaceSwitcher({
             </div>
           </div>
 
-          {/* List */}
           <div className="flex flex-col gap-px px-[6px] pb-[6px]">
             {filtered.map((ws) => {
-              const active = ws === workspaceName;
+              const isActive = ws.id === activeId;
               return (
                 <div
-                  key={ws}
+                  key={ws.id}
                   className={cn(
                     "flex items-center justify-between gap-2 px-2 py-[7px] rounded-md cursor-pointer",
-                    active ? "bg-[#2a2a30]" : "hover:bg-[#2E2E2E]"
+                    isActive ? "bg-[#2a2a30]" : "hover:bg-[#2E2E2E]"
                   )}
-                  onClick={() => {
-                    onSelect(ws);
-                    setOpen(false);
-                  }}
+                  onClick={() => { setActive(ws.id); setOpen(false); setSearch(""); }}
                 >
                   <div className="flex items-center gap-2">
-                    <Layers size={14} className={active ? "text-foreground" : "text-muted"} />
-                    <span
-                      className={cn(
-                        "text-[12px]",
-                        active ? "text-foreground font-semibold" : "text-muted font-normal"
-                      )}
-                    >
-                      {ws}
+                    <Layers size={14} className={isActive ? "text-foreground" : "text-muted"} />
+                    <span className={cn("text-[12px]", isActive ? "text-foreground font-semibold" : "text-muted font-normal")}>
+                      {ws.name}
                     </span>
                   </div>
-                  {active && <Check size={13} className="text-foreground shrink-0" />}
+                  {isActive && <Check size={13} className="text-foreground shrink-0" />}
                 </div>
               );
             })}
           </div>
 
-          {/* Footer */}
-          <div className="flex items-center gap-[6px] px-3 py-2 border-t border-[#2E2E2E] cursor-pointer hover:bg-[#2E2E2E]">
+          <div
+            className="flex items-center gap-[6px] px-3 py-2 border-t border-[#2E2E2E] cursor-pointer hover:bg-[#2E2E2E]"
+            onClick={() => { setOpen(false); onManageWorkspaces(); }}
+          >
             <Settings2 size={13} className="text-muted" />
             <span className="text-[12px] text-muted">Manage Workspaces</span>
           </div>

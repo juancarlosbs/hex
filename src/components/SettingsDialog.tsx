@@ -300,10 +300,10 @@ function EnvironmentsSection() {
     const entries = Object.entries(selected.variables);
     return (
       <div className="flex flex-col h-full">
-        {/* Collapsed header */}
+        {/* Header: back + dot + name + count + toggle + close */}
         <div className="flex items-center gap-2 px-5 py-[14px] border-b border-border">
           <button
-            className="flex items-center gap-1 px-[6px] py-1 rounded-[4px] bg-secondary text-muted hover:text-foreground cursor-pointer"
+            className="flex items-center gap-1 px-[6px] py-1 rounded-[6px] bg-secondary text-muted hover:text-foreground cursor-pointer"
             onClick={backToList}
           >
             <ChevronLeft size={13} />
@@ -317,19 +317,17 @@ function EnvironmentsSection() {
           <span className="text-[11px] text-muted">
             {entries.length} variable{entries.length !== 1 ? "s" : ""}
           </span>
-        </div>
-
-        {/* Toggle Key/Value | JSON */}
-        <div className="flex items-center px-5 py-[10px] border-b border-border">
-          <div className="flex rounded-[4px] border border-border overflow-hidden">
+          <div className="flex-1" />
+          {/* Toggle — estilo branch tabs */}
+          <div className="flex items-center gap-0">
             {(["table", "json"] as const).map((v) => (
               <button
                 key={v}
                 className={cn(
-                  "px-3 py-[5px] text-[12px] cursor-pointer",
+                  "px-[10px] py-[7px] text-[12px] font-mono rounded-[6px] cursor-pointer border",
                   view === v
-                    ? "bg-secondary text-foreground font-medium"
-                    : "text-muted hover:text-foreground"
+                    ? "bg-background border-border text-foreground font-semibold"
+                    : "bg-transparent border-transparent text-muted hover:text-foreground"
                 )}
                 onClick={() => v === "json" ? switchToJson() : setView("table")}
               >

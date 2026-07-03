@@ -30,10 +30,11 @@ interface EnvSelectorProps extends VariantProps<typeof triggerVariants> {
   env: string | null;
   envs: Env[];
   onSelect: (env: string | null) => void;
+  onManage?: () => void;
   className?: string;
 }
 
-export function EnvSelector({ env, envs, onSelect, className }: EnvSelectorProps) {
+export function EnvSelector({ env, envs, onSelect, onManage, className }: EnvSelectorProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -138,7 +139,10 @@ export function EnvSelector({ env, envs, onSelect, className }: EnvSelectorProps
           </div>
 
           {/* Footer */}
-          <div className="flex items-center gap-[6px] px-3 py-2 border-t border-[#2E2E2E] cursor-pointer hover:bg-[#2E2E2E]">
+          <div
+            className="flex items-center gap-[6px] px-3 py-2 border-t border-[#2E2E2E] cursor-pointer hover:bg-[#2E2E2E]"
+            onClick={() => { setOpen(false); onManage?.(); }}
+          >
             <Settings2 size={13} className="text-muted" />
             <span className="text-[12px] text-muted">Manage Environments</span>
           </div>

@@ -20,6 +20,7 @@ function envDotColor(name: string): string {
 interface Props {
   open: boolean;
   onClose: () => void;
+  initialSection?: Section;
 }
 
 const NAV = [
@@ -486,8 +487,8 @@ function EnvironmentsSection() {
   );
 }
 
-export function SettingsDialog({ open, onClose }: Props) {
-  const [section, setSection] = useState<Section>("workspaces");
+export function SettingsDialog({ open, onClose, initialSection }: Props) {
+  const [section, setSection] = useState<Section>(initialSection ?? "workspaces");
 
   if (!open) return null;
 

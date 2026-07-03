@@ -58,7 +58,7 @@ const ENVS = [
 export function Titlebar() {
   const [env, setEnv] = useState<string | null>("Development");
   const [addOpen, setAddOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<"workspaces" | "environments" | undefined>();
 
   return (
     <>
@@ -70,7 +70,7 @@ export function Titlebar() {
 
         <WorkspaceSwitcher
           onAddWorkspace={() => setAddOpen(true)}
-          onManageWorkspaces={() => setSettingsOpen(true)}
+          onManageWorkspaces={() => setSettingsSection("workspaces")}
         />
 
         <div
@@ -88,7 +88,7 @@ export function Titlebar() {
           className="flex items-center gap-2"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
-          <EnvSelector env={env} envs={ENVS} onSelect={setEnv} />
+          <EnvSelector env={env} envs={ENVS} onSelect={setEnv} onManage={() => setSettingsSection("environments")} />
 
           <div className="flex items-center gap-2 px-2 py-[6px] w-[260px] rounded-[4px] bg-secondary border border-border cursor-text">
             <Search size={13} className="text-muted shrink-0" />
@@ -98,7 +98,7 @@ export function Titlebar() {
 
           <div
             className="p-[6px] rounded-[4px] cursor-pointer hover:bg-secondary"
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => setSettingsSection("workspaces")}
           >
             <Settings size={15} className="text-muted" />
           </div>
@@ -106,7 +106,11 @@ export function Titlebar() {
       </header>
 
       <AddWorkspaceModal open={addOpen} onClose={() => setAddOpen(false)} />
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDialog
+        open={settingsSection !== undefined}
+        initialSection={settingsSection}
+        onClose={() => setSettingsSection(undefined)}
+      />
     </>
   );
 }

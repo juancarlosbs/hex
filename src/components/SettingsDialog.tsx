@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   X, Layers, Globe, Palette, Keyboard, Settings,
   Plus, Pencil, Trash2, Check, ChevronLeft,
@@ -489,6 +489,10 @@ function EnvironmentsSection() {
 
 export function SettingsDialog({ open, onClose, initialSection }: Props) {
   const [section, setSection] = useState<Section>(initialSection ?? "workspaces");
+
+  useEffect(() => {
+    if (open) setSection(initialSection ?? "workspaces");
+  }, [open, initialSection]);
 
   if (!open) return null;
 

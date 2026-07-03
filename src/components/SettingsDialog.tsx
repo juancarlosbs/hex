@@ -33,7 +33,7 @@ const NAV = [
 
 type Section = (typeof NAV)[number]["id"];
 
-function WorkspacesSection() {
+function WorkspacesSection({ onClose }: { onClose: () => void }) {
   const { workspaces, activeId, addWorkspace, removeWorkspace, renameWorkspace, setActive } =
     useWorkspaceStore();
   const [addOpen, setAddOpen] = useState(false);
@@ -68,13 +68,18 @@ function WorkspacesSection() {
     <div className="flex flex-col gap-4 p-5">
       <div className="flex items-center justify-between">
         <span className="text-[16px] font-semibold text-foreground">Workspaces</span>
-        <button
-          className="flex items-center gap-[6px] px-3 py-[6px] rounded-[4px] bg-accent text-accent-foreground text-[12px] font-semibold cursor-pointer hover:bg-accent/90"
-          onClick={() => setAddOpen(true)}
-        >
-          <Plus size={13} />
-          New Workspace
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            className="flex items-center gap-[6px] px-3 py-[6px] rounded-[4px] bg-accent text-accent-foreground text-[12px] font-semibold cursor-pointer hover:bg-accent/90"
+            onClick={() => setAddOpen(true)}
+          >
+            <Plus size={13} />
+            New Workspace
+          </button>
+          <button className="p-1 rounded text-muted hover:text-foreground cursor-pointer" onClick={onClose}>
+            <X size={16} />
+          </button>
+        </div>
       </div>
 
       {/* Inline add form */}
@@ -209,7 +214,7 @@ function WorkspacesSection() {
   );
 }
 
-function EnvironmentsSection() {
+function EnvironmentsSection({ onClose }: { onClose: () => void }) {
   const { environments, addEnv, removeEnv, updateVariables } = useEnvStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<"table" | "json">("table");
@@ -335,6 +340,9 @@ function EnvironmentsSection() {
               </button>
             ))}
           </div>
+          <button className="p-1 rounded text-muted hover:text-foreground cursor-pointer" onClick={onClose}>
+            <X size={16} />
+          </button>
         </div>
 
         {/* Content */}
@@ -407,13 +415,18 @@ function EnvironmentsSection() {
     <div className="flex flex-col gap-4 p-5">
       <div className="flex items-center justify-between">
         <span className="text-[14px] font-semibold text-foreground">Environments</span>
-        <button
-          className="flex items-center gap-[6px] px-3 py-[6px] rounded-[4px] border border-border text-[12px] text-muted hover:text-foreground cursor-pointer"
-          onClick={() => setAddOpen(true)}
-        >
-          <Plus size={13} />
-          New
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            className="flex items-center gap-[6px] px-3 py-[6px] rounded-[4px] border border-border text-[12px] text-muted hover:text-foreground cursor-pointer"
+            onClick={() => setAddOpen(true)}
+          >
+            <Plus size={13} />
+            New
+          </button>
+          <button className="p-1 rounded text-muted hover:text-foreground cursor-pointer" onClick={onClose}>
+            <X size={16} />
+          </button>
+        </div>
       </div>
 
       {addOpen && (
@@ -527,19 +540,18 @@ export function SettingsDialog({ open, onClose, initialSection }: Props) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto relative">
-          <button
-            className="absolute top-3 right-3 p-1 rounded text-muted hover:text-foreground cursor-pointer"
-            onClick={onClose}
-          >
-            <X size={16} />
-          </button>
-
           {section === "workspaces" ? (
-            <WorkspacesSection />
+            <WorkspacesSection onClose={onClose} />
           ) : section === "environments" ? (
-            <EnvironmentsSection />
+            <EnvironmentsSection onClose={onClose} />
           ) : (
-            <div className="flex items-center justify-center h-full text-muted text-[13px]">
+            <div className="relative flex items-center justify-center h-full text-muted text-[13px]">
+              <button
+                className="absolute top-3 right-3 p-1 rounded text-muted hover:text-foreground cursor-pointer"
+                onClick={onClose}
+              >
+                <X size={16} />
+              </button>
               {NAV.find((n) => n.id === section)?.label} — coming soon
             </div>
           )}

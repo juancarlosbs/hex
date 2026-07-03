@@ -70,7 +70,7 @@ function WorkspacesSection({ onClose }: { onClose: () => void }) {
         <span className="text-[16px] font-semibold text-foreground">Workspaces</span>
         <div className="flex items-center gap-2">
           <button
-            className="flex items-center gap-[6px] px-3 py-[6px] rounded-[4px] bg-accent text-accent-foreground text-[12px] font-semibold cursor-pointer hover:bg-accent/90"
+            className="flex items-center gap-[6px] px-3 py-[6px] rounded-[6px] bg-primary text-primary-foreground text-[12px] font-semibold cursor-pointer hover:bg-primary/90"
             onClick={() => setAddOpen(true)}
           >
             <Plus size={13} />

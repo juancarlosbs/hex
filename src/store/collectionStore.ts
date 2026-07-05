@@ -14,7 +14,7 @@ interface CollectionState {
   setActiveRequest: (id: string | null) => void;
 }
 
-export const useCollectionStore = create<CollectionState>((set) => ({
+export const useCollectionStore = create<CollectionState>((set, get) => ({
   collections: [],
   activeRequestId: null,
 
@@ -24,33 +24,63 @@ export const useCollectionStore = create<CollectionState>((set) => ({
   },
 
   async addCollection(workspaceId, name) {
-    const node = await api.createCollection(workspaceId, name);
-    set((s) => ({ collections: [...s.collections, node] }));
+    try {
+      const node = await api.createCollection(workspaceId, name);
+      set((s) => ({ collections: [...s.collections, node] }));
+    } catch (e) {
+      console.error("createCollection failed:", e);
+    }
   },
 
   async addFolder(workspaceId, parentPath, name) {
-    const node = await api.createFolder(workspaceId, parentPath, name);
-    set((s) => ({ collections: insertNode(s.collections, parentPath, node) }));
+    try {
+      const node = await api.createFolder(workspaceId, parentPath, name);
+      set((s) => ({ collections: insertNode(s.collections, parentPath, node) }));
+    } catch (e) {
+      console.error("createFolder failed:", e);
+    }
   },
 
   async addRequest(workspaceId, parentPath, name, kind) {
-    const node = await api.createRequest(workspaceId, parentPath, name, kind);
-    set((s) => ({ collections: insertNode(s.collections, parentPath, node) }));
+    try {
+      const node = await api.createRequest(workspaceId, parentPath, name, kind);
+      set((s) => ({ collections: insertNode(s.collections, parentPath, node) }));
+    } catch (e) {
+      console.error("createRequest failed:", e);
+    }
   },
 
   async rename(workspaceId, path, name) {
-    await api.renameNode(workspaceId, path, name);
+    const prev = get().collections;
     set((s) => ({ collections: renameNode(s.collections, path, name) }));
+    try {
+      await api.renameNode(workspaceId, path, name);
+    } catch (e) {
+      console.error("rename failed:", e);
+      set({ collections: prev });
+    }
   },
 
   async remove(workspaceId, path) {
-    await api.deleteNode(workspaceId, path);
+    const prev = get().collections;
     set((s) => ({ collections: removeNode(s.collections, path) }));
+    try {
+      await api.deleteNode(workspaceId, path);
+    } catch (e) {
+      console.error("delete failed:", e);
+      set({ collections: prev });
+    }
   },
 
   async reorder(workspaceId, parentPath, orderedIds) {
-    await api.reorderChildren(workspaceId, parentPath, orderedIds);
+    const prev = get().collections;
     set((s) => ({ collections: reorderInTree(s.collections, parentPath, orderedIds) }));
+    try {
+      await api.reorderChildren(workspaceId, parentPath, orderedIds);
+    } catch (e) {
+      console.error("reorder failed:", e);
+      set({ collections: prev });
+    }
   },
 
   setActiveRequest(id) {

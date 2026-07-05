@@ -56,9 +56,17 @@ fn collections_root(data_dir: &Path, workspace_id: &str) -> PathBuf {
         .join("collections")
 }
 
-#[allow(dead_code)]
 fn resolve_path(root: &Path, ids: &[String]) -> PathBuf {
     ids.iter().fold(root.to_path_buf(), |p, id| p.join(id))
+}
+
+fn validate_ids(ids: &[String]) -> anyhow::Result<()> {
+    for id in ids {
+        if id.contains('/') || id.contains('\\') || id == ".." || id == "." {
+            anyhow::bail!("invalid id: {}", id);
+        }
+    }
+    Ok(())
 }
 
 fn new_id() -> String {
@@ -153,6 +161,7 @@ pub fn create_collection(data_dir: &Path, workspace_id: &str, name: &str) -> any
 }
 
 pub fn create_folder(data_dir: &Path, workspace_id: &str, parent_path: Vec<String>, name: &str) -> anyhow::Result<CollectionNode> {
+    validate_ids(&parent_path)?;
     let root = collections_root(data_dir, workspace_id);
     let parent_dir = resolve_path(&root, &parent_path);
     let id = new_id();
@@ -166,6 +175,7 @@ pub fn create_folder(data_dir: &Path, workspace_id: &str, parent_path: Vec<Strin
 }
 
 pub fn create_request(data_dir: &Path, workspace_id: &str, parent_path: Vec<String>, name: &str, kind: RequestKind) -> anyhow::Result<CollectionNode> {
+    validate_ids(&parent_path)?;
     let root = collections_root(data_dir, workspace_id);
     let parent_dir = resolve_path(&root, &parent_path);
     let id = new_id();
@@ -178,6 +188,7 @@ pub fn create_request(data_dir: &Path, workspace_id: &str, parent_path: Vec<Stri
 }
 
 pub fn rename_node(data_dir: &Path, workspace_id: &str, path: Vec<String>, name: &str) -> anyhow::Result<()> {
+    validate_ids(&path)?;
     let root = collections_root(data_dir, workspace_id);
     let id = path.last().ok_or_else(|| anyhow::anyhow!("empty path"))?;
     let parent = resolve_path(&root, &path[..path.len() - 1]);
@@ -196,6 +207,7 @@ pub fn rename_node(data_dir: &Path, workspace_id: &str, path: Vec<String>, name:
 }
 
 pub fn delete_node(data_dir: &Path, workspace_id: &str, path: Vec<String>) -> anyhow::Result<()> {
+    validate_ids(&path)?;
     let root = collections_root(data_dir, workspace_id);
     let id = path.last().ok_or_else(|| anyhow::anyhow!("empty path"))?;
     if path.len() == 1 {
@@ -219,6 +231,7 @@ pub fn delete_node(data_dir: &Path, workspace_id: &str, path: Vec<String>) -> an
 }
 
 pub fn reorder_children(data_dir: &Path, workspace_id: &str, parent_path: Vec<String>, ordered_ids: Vec<String>) -> anyhow::Result<()> {
+    validate_ids(&parent_path)?;
     let root = collections_root(data_dir, workspace_id);
     if parent_path.is_empty() {
         let mut meta = read_root_meta(&root)?;

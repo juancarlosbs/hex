@@ -116,16 +116,27 @@ function RenameInput({
   );
 }
 
+// ── Helper ───────────────────────────────────────────────────────────────────
+
+const arraysEqual = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((v, i) => v === b[i]);
+
 // ── SortableList (one DndContext per level) ───────────────────────────────────
 
 function SortableList({
   nodes,
   parentPath,
   workspaceId,
+  pendingCreation,
+  onPendingCreate,
+  onCreationDone,
 }: {
   nodes: CollectionNode[];
   parentPath: string[];
   workspaceId: string;
+  pendingCreation: { parentPath: string[] } | null;
+  onPendingCreate: (parentPath: string[]) => void;
+  onCreationDone: () => void;
 }) {
   const reorder = useCollectionStore((s) => s.reorder);
   const sensors = useSensors(useSensor(PointerSensor));
@@ -139,6 +150,8 @@ function SortableList({
     reorder(workspaceId, parentPath, ordered);
   }
 
+  const showPending = pendingCreation !== null && arraysEqual(pendingCreation.parentPath, parentPath);
+
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <SortableContext items={nodes.map((n) => n.id)} strategy={verticalListSortingStrategy}>
@@ -149,6 +162,9 @@ function SortableList({
               node={node}
               path={[...parentPath, node.id]}
               workspaceId={workspaceId}
+              pendingCreation={pendingCreation}
+              onPendingCreate={onPendingCreate}
+              onCreationDone={onCreationDone}
             />
           ) : (
             <SortableRequestItem
@@ -160,7 +176,48 @@ function SortableList({
           )
         )}
       </SortableContext>
+      {showPending && (
+        <PendingCreationRow
+          parentPath={parentPath}
+          workspaceId={workspaceId}
+          onCreationDone={onCreationDone}
+        />
+      )}
     </DndContext>
+  );
+}
+
+// ── Pending creation row ──────────────────────────────────────────────────────
+
+function PendingCreationRow({
+  parentPath,
+  workspaceId,
+  onCreationDone,
+}: {
+  parentPath: string[];
+  workspaceId: string;
+  onCreationDone: () => void;
+}) {
+  const addCollection = useCollectionStore((s) => s.addCollection);
+  const addFolder = useCollectionStore((s) => s.addFolder);
+  const isRoot = parentPath.length === 0;
+  const defaultName = isRoot ? "New Collection" : "New Folder";
+
+  function handleCommit(name: string) {
+    if (isRoot) addCollection(workspaceId, name);
+    else addFolder(workspaceId, parentPath, name);
+    onCreationDone();
+  }
+
+  return (
+    <div className="flex items-center gap-[6px] rounded-[6px] px-2 py-[7px]" style={{ paddingLeft: isRoot ? 8 : 28 }}>
+      <Folder size={14} className="text-sidebar-muted shrink-0" />
+      <RenameInput
+        initial={defaultName}
+        onCommit={handleCommit}
+        onCancel={onCreationDone}
+      />
+    </div>
   );
 }
 
@@ -170,17 +227,22 @@ function SortableFolderItem({
   node,
   path,
   workspaceId,
+  pendingCreation,
+  onPendingCreate,
+  onCreationDone,
 }: {
   node: Extract<CollectionNode, { type: "folder" }>;
   path: string[];
   workspaceId: string;
+  pendingCreation: { parentPath: string[] } | null;
+  onPendingCreate: (parentPath: string[]) => void;
+  onCreationDone: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const [renaming, setRenaming] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const rename = useCollectionStore((s) => s.rename);
   const remove = useCollectionStore((s) => s.remove);
-  const addFolder = useCollectionStore((s) => s.addFolder);
   const addRequest = useCollectionStore((s) => s.addRequest);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: node.id });
@@ -194,7 +256,7 @@ function SortableFolderItem({
   function handleAction(a: MenuAction) {
     if (a.type === "rename") setRenaming(true);
     if (a.type === "delete") remove(workspaceId, path);
-    if (a.type === "newFolder") addFolder(workspaceId, path, "New Folder");
+    if (a.type === "newFolder") { setOpen(true); onPendingCreate(path); }
     if (a.type === "newRequest") addRequest(workspaceId, path, "New Request", { kind: "rest", method: "GET", url: "" } as RequestKind);
   }
 
@@ -229,9 +291,16 @@ function SortableFolderItem({
           <span className="text-[13px] font-semibold text-foreground">{node.name}</span>
         )}
       </div>
-      {open && node.children.length > 0 && (
+      {open && (node.children.length > 0 || (pendingCreation !== null && arraysEqual(pendingCreation.parentPath, path))) && (
         <div style={{ paddingLeft: 16 }}>
-          <SortableList nodes={node.children} parentPath={path} workspaceId={workspaceId} />
+          <SortableList
+            nodes={node.children}
+            parentPath={path}
+            workspaceId={workspaceId}
+            pendingCreation={pendingCreation}
+            onPendingCreate={onPendingCreate}
+            onCreationDone={onCreationDone}
+          />
         </div>
       )}
       {menu && (

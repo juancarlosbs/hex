@@ -1,11 +1,11 @@
+import { useRef } from "react";
 import { FolderPlus, Plus, RefreshCw, Search } from "lucide-react";
-import { CollectionTree } from "./CollectionTree";
+import { CollectionTree, CollectionTreeHandle } from "./CollectionTree";
 import { useWorkspaceStore } from "../store/workspaceStore";
-import { useCollectionStore } from "../store/collectionStore";
 
 export function Sidebar() {
   const workspaceId = useWorkspaceStore((s) => s.activeId);
-  const addCollection = useCollectionStore((s) => s.addCollection);
+  const treeRef = useRef<CollectionTreeHandle>(null);
 
   return (
     <aside
@@ -24,7 +24,7 @@ export function Sidebar() {
           <FolderPlus
             size={14}
             className="text-sidebar-muted cursor-pointer hover:text-foreground"
-            onClick={() => addCollection(workspaceId, "New Collection")}
+            onClick={() => treeRef.current?.startCreate()}
           />
           <Plus size={14} className="text-sidebar-muted cursor-pointer hover:text-foreground" />
         </div>
@@ -40,7 +40,7 @@ export function Sidebar() {
 
       {/* Tree */}
       <div className="flex-1 overflow-y-auto px-[6px] py-1">
-        <CollectionTree workspaceId={workspaceId} />
+        <CollectionTree ref={treeRef} workspaceId={workspaceId} />
       </div>
 
       {/* Footer */}

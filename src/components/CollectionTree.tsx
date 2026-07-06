@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import {
   DndContext,
   closestCenter,
@@ -339,9 +339,28 @@ function SortableRequestItem({
 
 // ── Root export ───────────────────────────────────────────────────────────────
 
-export function CollectionTree({ workspaceId }: { workspaceId: string }) {
-  const collections = useCollectionStore((s) => s.collections);
-  return (
-    <SortableList nodes={collections} parentPath={[]} workspaceId={workspaceId} />
-  );
+export interface CollectionTreeHandle {
+  startCreate: () => void;
 }
+
+export const CollectionTree = forwardRef<CollectionTreeHandle, { workspaceId: string }>(
+  function CollectionTree({ workspaceId }, ref) {
+    const collections = useCollectionStore((s) => s.collections);
+    const [pendingCreation, setPendingCreation] = useState<{ parentPath: string[] } | null>(null);
+
+    useImperativeHandle(ref, () => ({
+      startCreate: () => setPendingCreation({ parentPath: [] }),
+    }));
+
+    return (
+      <SortableList
+        nodes={collections}
+        parentPath={[]}
+        workspaceId={workspaceId}
+        pendingCreation={pendingCreation}
+        onPendingCreate={(parentPath) => setPendingCreation({ parentPath })}
+        onCreationDone={() => setPendingCreation(null)}
+      />
+    );
+  }
+);

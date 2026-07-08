@@ -5,18 +5,17 @@ import { ResponsePlaceholder } from "./response/ResponsePlaceholder";
 
 export function CentralPanel() {
   return (
-    <Group orientation="horizontal" id="hex-central" className="flex h-full w-full">
-      <Panel defaultSize={22} minSize={16} maxSize={40}>
-        <Sidebar />
-      </Panel>
-      <Separator className="w-[1px] bg-border hover:bg-primary/40 transition-colors" />
-      <Panel defaultSize={48} minSize={30}>
-        <RequestPanel />
-      </Panel>
-      <Separator className="w-[1px] bg-border hover:bg-primary/40 transition-colors" />
-      <Panel defaultSize={32} minSize={20}>
-        <ResponsePlaceholder />
-      </Panel>
-    </Group>
+    <div className="flex h-full w-full">
+      <Sidebar />
+      <Group orientation="horizontal" id="hex-central" className="flex flex-1 min-w-0 h-full">
+        <Panel defaultSize={60} minSize={30}>
+          <RequestPanel />
+        </Panel>
+        <Separator className="w-[1px] bg-border hover:bg-primary/40 transition-colors" />
+        <Panel defaultSize={40} minSize={20}>
+          <ResponsePlaceholder />
+        </Panel>
+      </Group>
+    </div>
   );
 }

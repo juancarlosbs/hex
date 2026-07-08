@@ -9,7 +9,7 @@ export function Sidebar() {
 
   return (
     <aside
-      className="flex flex-col h-full w-full border-r border-border"
+      className="flex flex-col h-full w-[264px] shrink-0 border-r border-border"
       style={{ backgroundColor: "var(--color-sidebar)" }}
     >
       {/* Header */}

@@ -6,7 +6,7 @@ import { ResponsePlaceholder } from "./response/ResponsePlaceholder";
 export function CentralPanel() {
   return (
     <Group orientation="horizontal" id="hex-central" className="flex h-full w-full">
-      <Panel defaultSize={20} minSize={12} maxSize={40}>
+      <Panel defaultSize={22} minSize={16} maxSize={40}>
         <Sidebar />
       </Panel>
       <Separator className="w-[1px] bg-border hover:bg-primary/40 transition-colors" />

@@ -18,6 +18,8 @@ import { ChevronDown, Folder, Hexagon } from "lucide-react";
 import { cn } from "../lib/utils";
 import { CollectionNode, RequestKind } from "../lib/api";
 import { useCollectionStore } from "../store/collectionStore";
+import { useRequestStore } from "../store/requestStore";
+import { HTTP_METHODS, HttpMethod } from "../lib/request-types";
 
 const METHOD_COLORS: Record<string, string> = {
   GET: "text-method-get",
@@ -333,10 +335,24 @@ function SortableRequestItem({
   const remove = useCollectionStore((s) => s.remove);
   const activeRequestId = useCollectionStore((s) => s.activeRequestId);
   const setActive = useCollectionStore((s) => s.setActiveRequest);
+  const openInStore = useRequestStore((s) => s.openRequest);
+  const setActiveInStore = useRequestStore((s) => s.setActive);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: node.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
   const isActive = activeRequestId === node.id;
+
+  function handleActivate() {
+    setActive(node.id);
+    if (node.kind === "rest") {
+      const raw = (node as { method: string }).method;
+      const method: HttpMethod = (HTTP_METHODS as readonly string[]).includes(raw)
+        ? (raw as HttpMethod)
+        : "GET";
+      openInStore(node.id, node.name, method);
+      setActiveInStore(node.id);
+    }
+  }
 
   function handleContextMenu(e: React.MouseEvent) {
     e.preventDefault();
@@ -363,7 +379,7 @@ function SortableRequestItem({
         "flex items-center gap-2 rounded-[6px] px-2 py-[6px] cursor-pointer select-none",
         isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/50"
       )}
-      onClick={() => setActive(node.id)}
+      onClick={handleActivate}
       onContextMenu={handleContextMenu}
       {...attributes}
       {...listeners}

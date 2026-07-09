@@ -87,7 +87,11 @@ export const useRequestStore = create<RequestState>((set, get) => ({
         body: r.body,
         auth: r.auth,
       });
-      set((s) => ({ openRequests: patch(s.openRequests, id, { dirty: false }) }));
+      set((s) => {
+        // r was edited again while the save was in flight — keep it dirty
+        if (s.openRequests[id] !== r) return s;
+        return { openRequests: patch(s.openRequests, id, { dirty: false }) };
+      });
       useCollectionStore.getState().updateRequestMeta(r.path, r.method, r.url);
     } catch (e) {
       console.error("saveRequest failed:", e);

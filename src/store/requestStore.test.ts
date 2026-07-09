@@ -48,6 +48,20 @@ describe("dirty tracking", () => {
     expect(useRequestStore.getState().openRequests.r1.dirty).toBe(false);
   });
 
+  it("keeps dirty when the request is edited during an in-flight save", async () => {
+    let resolveUpdate!: () => void;
+    vi.mocked(api.updateRequest).mockReturnValue(
+      new Promise((resolve) => { resolveUpdate = () => resolve(undefined); })
+    );
+
+    const savePromise = useRequestStore.getState().saveRequest("r1");
+    useRequestStore.getState().setUrl("r1", "changed");
+    resolveUpdate();
+    await savePromise;
+
+    expect(useRequestStore.getState().openRequests.r1.dirty).toBe(true);
+  });
+
   it("concurrent openRequest calls for the same id do not duplicate the tab", async () => {
     vi.mocked(api.getRequest).mockResolvedValue({
       id: "r2",

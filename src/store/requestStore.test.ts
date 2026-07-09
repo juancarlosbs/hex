@@ -47,4 +47,21 @@ describe("dirty tracking", () => {
     );
     expect(useRequestStore.getState().openRequests.r1.dirty).toBe(false);
   });
+
+  it("concurrent openRequest calls for the same id do not duplicate the tab", async () => {
+    vi.mocked(api.getRequest).mockResolvedValue({
+      id: "r2",
+      name: "R2",
+      kind: "rest",
+      method: "GET",
+      url: "https://api.dev/r2",
+    });
+    const first = useRequestStore.getState().openRequest("r2", "R2", ["c1", "r2"]);
+    const second = useRequestStore.getState().openRequest("r2", "R2", ["c1", "r2"]);
+    await Promise.all([first, second]);
+    expect(api.getRequest).toHaveBeenCalledTimes(2);
+    const s = useRequestStore.getState();
+    expect(s.order.filter((x) => x === "r2")).toHaveLength(1);
+    expect(s.openRequests.r2).toBeDefined();
+  });
 });

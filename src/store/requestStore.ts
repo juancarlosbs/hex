@@ -62,11 +62,15 @@ export const useRequestStore = create<RequestState>((set, get) => ({
       console.error("getRequest failed:", e);
       req = makeEmptyRequest(id, name, "GET", path);
     }
-    set((s) => ({
-      openRequests: { ...s.openRequests, [id]: req },
-      order: s.order.includes(id) ? s.order : [...s.order, id],
-      activeId: id,
-    }));
+    set((s) => {
+      // re-check after the await: a concurrent openRequest may have landed first
+      if (s.openRequests[id]) return { ...s, activeId: id };
+      return {
+        openRequests: { ...s.openRequests, [id]: req },
+        order: s.order.includes(id) ? s.order : [...s.order, id],
+        activeId: id,
+      };
+    });
   },
 
   async saveRequest(id) {

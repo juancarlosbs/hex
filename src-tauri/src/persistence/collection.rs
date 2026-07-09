@@ -39,12 +39,74 @@ struct FolderMeta {
     children_order: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct RequestFile {
-    id: String,
-    name: String,
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct KeyValueEntry {
+    pub id: String,
+    pub key: String,
+    pub value: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "type")]
+    pub entry_type: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BodyData {
+    pub mode: String,
+    pub json: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub form: Vec<KeyValueEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum AuthData {
+    None,
+    Basic {
+        username: String,
+        password: String,
+    },
+    Bearer {
+        token: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    Apikey {
+        key: String,
+        value: String,
+        add_to: String,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RequestFile {
+    pub id: String,
+    pub name: String,
     #[serde(flatten)]
-    kind: RequestKind,
+    pub kind: RequestKind,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub params: Vec<KeyValueEntry>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub headers: Vec<KeyValueEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<BodyData>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth: Option<AuthData>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
+pub struct RequestContent {
+    #[serde(flatten)]
+    pub kind: RequestKind,
+    #[serde(default)]
+    pub params: Vec<KeyValueEntry>,
+    #[serde(default)]
+    pub headers: Vec<KeyValueEntry>,
+    #[serde(default)]
+    pub body: Option<BodyData>,
+    #[serde(default)]
+    pub auth: Option<AuthData>,
 }
 
 // ── Path helpers ─────────────────────────────────────────────────────────────
@@ -63,7 +125,7 @@ fn resolve_path(root: &Path, ids: &[String]) -> PathBuf {
 fn validate_ids(ids: &[String]) -> anyhow::Result<()> {
     for id in ids {
         if id.contains('/') || id.contains('\\') || id == ".." || id == "." {
-            anyhow::bail!("invalid id: {}", id);
+            anyhow::bail!("invalid id: {id}");
         }
     }
     Ok(())
@@ -106,7 +168,7 @@ fn read_folder_children(dir: &Path, order: &[String]) -> anyhow::Result<Vec<Coll
     let mut nodes = vec![];
     for id in order {
         let subfolder = dir.join(id);
-        let req_file = dir.join(format!("{}.toml", id));
+        let req_file = dir.join(format!("{id}.toml"));
         if subfolder.is_dir() {
             let meta = read_folder_meta(&subfolder)?;
             let children = read_folder_children(&subfolder, &meta.children_order)?;
@@ -127,7 +189,10 @@ fn read_folder_children(dir: &Path, order: &[String]) -> anyhow::Result<Vec<Coll
     Ok(nodes)
 }
 
-pub fn list_collections(data_dir: &Path, workspace_id: &str) -> anyhow::Result<Vec<CollectionNode>> {
+pub fn list_collections(
+    data_dir: &Path,
+    workspace_id: &str,
+) -> anyhow::Result<Vec<CollectionNode>> {
     let root = collections_root(data_dir, workspace_id);
     let root_meta = read_root_meta(&root)?;
     let mut cols = vec![];
@@ -148,46 +213,141 @@ pub fn list_collections(data_dir: &Path, workspace_id: &str) -> anyhow::Result<V
 
 // ── Mutations ────────────────────────────────────────────────────────────────
 
-pub fn create_collection(data_dir: &Path, workspace_id: &str, name: &str) -> anyhow::Result<CollectionNode> {
+pub fn create_collection(
+    data_dir: &Path,
+    workspace_id: &str,
+    name: &str,
+) -> anyhow::Result<CollectionNode> {
     let root = collections_root(data_dir, workspace_id);
     let id = new_id();
     let col_dir = root.join(&id);
     std::fs::create_dir_all(&col_dir)?;
-    write_folder_meta(&col_dir, &FolderMeta { name: name.to_string(), children_order: vec![] })?;
+    write_folder_meta(
+        &col_dir,
+        &FolderMeta {
+            name: name.to_string(),
+            children_order: vec![],
+        },
+    )?;
     let mut root_meta = read_root_meta(&root)?;
     root_meta.children_order.push(id.clone());
     write_root_meta(&root, &root_meta)?;
-    Ok(CollectionNode::Folder { id, name: name.to_string(), children: vec![] })
+    Ok(CollectionNode::Folder {
+        id,
+        name: name.to_string(),
+        children: vec![],
+    })
 }
 
-pub fn create_folder(data_dir: &Path, workspace_id: &str, parent_path: Vec<String>, name: &str) -> anyhow::Result<CollectionNode> {
+pub fn create_folder(
+    data_dir: &Path,
+    workspace_id: &str,
+    parent_path: Vec<String>,
+    name: &str,
+) -> anyhow::Result<CollectionNode> {
     validate_ids(&parent_path)?;
     let root = collections_root(data_dir, workspace_id);
     let parent_dir = resolve_path(&root, &parent_path);
     let id = new_id();
     let folder_dir = parent_dir.join(&id);
     std::fs::create_dir_all(&folder_dir)?;
-    write_folder_meta(&folder_dir, &FolderMeta { name: name.to_string(), children_order: vec![] })?;
+    write_folder_meta(
+        &folder_dir,
+        &FolderMeta {
+            name: name.to_string(),
+            children_order: vec![],
+        },
+    )?;
     let mut parent_meta = read_folder_meta(&parent_dir)?;
     parent_meta.children_order.push(id.clone());
     write_folder_meta(&parent_dir, &parent_meta)?;
-    Ok(CollectionNode::Folder { id, name: name.to_string(), children: vec![] })
+    Ok(CollectionNode::Folder {
+        id,
+        name: name.to_string(),
+        children: vec![],
+    })
 }
 
-pub fn create_request(data_dir: &Path, workspace_id: &str, parent_path: Vec<String>, name: &str, kind: RequestKind) -> anyhow::Result<CollectionNode> {
+pub fn create_request(
+    data_dir: &Path,
+    workspace_id: &str,
+    parent_path: Vec<String>,
+    name: &str,
+    kind: RequestKind,
+) -> anyhow::Result<CollectionNode> {
     validate_ids(&parent_path)?;
     let root = collections_root(data_dir, workspace_id);
     let parent_dir = resolve_path(&root, &parent_path);
     let id = new_id();
-    let rf = RequestFile { id: id.clone(), name: name.to_string(), kind: kind.clone() };
-    std::fs::write(parent_dir.join(format!("{}.toml", id)), toml::to_string(&rf)?)?;
+    let rf = RequestFile {
+        id: id.clone(),
+        name: name.to_string(),
+        kind: kind.clone(),
+        params: vec![],
+        headers: vec![],
+        body: None,
+        auth: None,
+    };
+    std::fs::write(
+        parent_dir.join(format!("{id}.toml")),
+        toml::to_string(&rf)?,
+    )?;
     let mut parent_meta = read_folder_meta(&parent_dir)?;
     parent_meta.children_order.push(id.clone());
     write_folder_meta(&parent_dir, &parent_meta)?;
-    Ok(CollectionNode::Request { id, name: name.to_string(), kind })
+    Ok(CollectionNode::Request {
+        id,
+        name: name.to_string(),
+        kind,
+    })
 }
 
-pub fn rename_node(data_dir: &Path, workspace_id: &str, path: Vec<String>, name: &str) -> anyhow::Result<()> {
+#[allow(dead_code)]
+fn request_file_path(root: &Path, path: &[String]) -> anyhow::Result<PathBuf> {
+    let id = path.last().ok_or_else(|| anyhow::anyhow!("empty path"))?;
+    let parent = resolve_path(root, &path[..path.len() - 1]);
+    Ok(parent.join(format!("{id}.toml")))
+}
+
+#[allow(dead_code)]
+pub fn get_request(
+    data_dir: &Path,
+    workspace_id: &str,
+    path: Vec<String>,
+) -> anyhow::Result<RequestFile> {
+    validate_ids(&path)?;
+    let root = collections_root(data_dir, workspace_id);
+    let file = request_file_path(&root, &path)?;
+    Ok(toml::from_str(&std::fs::read_to_string(file)?)?)
+}
+
+#[allow(dead_code)]
+pub fn update_request(
+    data_dir: &Path,
+    workspace_id: &str,
+    path: Vec<String>,
+    content: RequestContent,
+) -> anyhow::Result<()> {
+    validate_ids(&path)?;
+    let root = collections_root(data_dir, workspace_id);
+    let file = request_file_path(&root, &path)?;
+    // read first so `name` (owned by rename_node) is never clobbered by a stale save
+    let mut rf: RequestFile = toml::from_str(&std::fs::read_to_string(&file)?)?;
+    rf.kind = content.kind;
+    rf.params = content.params;
+    rf.headers = content.headers;
+    rf.body = content.body;
+    rf.auth = content.auth;
+    std::fs::write(file, toml::to_string(&rf)?)?;
+    Ok(())
+}
+
+pub fn rename_node(
+    data_dir: &Path,
+    workspace_id: &str,
+    path: Vec<String>,
+    name: &str,
+) -> anyhow::Result<()> {
     validate_ids(&path)?;
     let root = collections_root(data_dir, workspace_id);
     let id = path.last().ok_or_else(|| anyhow::anyhow!("empty path"))?;
@@ -198,7 +358,7 @@ pub fn rename_node(data_dir: &Path, workspace_id: &str, path: Vec<String>, name:
         meta.name = name.to_string();
         write_folder_meta(&as_dir, &meta)?;
     } else {
-        let req_path = parent.join(format!("{}.toml", id));
+        let req_path = parent.join(format!("{id}.toml"));
         let mut rf: RequestFile = toml::from_str(&std::fs::read_to_string(&req_path)?)?;
         rf.name = name.to_string();
         std::fs::write(req_path, toml::to_string(&rf)?)?;
@@ -221,7 +381,7 @@ pub fn delete_node(data_dir: &Path, workspace_id: &str, path: Vec<String>) -> an
         if as_dir.is_dir() {
             std::fs::remove_dir_all(&as_dir)?;
         } else {
-            std::fs::remove_file(parent.join(format!("{}.toml", id)))?;
+            std::fs::remove_file(parent.join(format!("{id}.toml")))?;
         }
         let mut meta = read_folder_meta(&parent)?;
         meta.children_order.retain(|x| x != id);
@@ -230,7 +390,12 @@ pub fn delete_node(data_dir: &Path, workspace_id: &str, path: Vec<String>) -> an
     Ok(())
 }
 
-pub fn reorder_children(data_dir: &Path, workspace_id: &str, parent_path: Vec<String>, ordered_ids: Vec<String>) -> anyhow::Result<()> {
+pub fn reorder_children(
+    data_dir: &Path,
+    workspace_id: &str,
+    parent_path: Vec<String>,
+    ordered_ids: Vec<String>,
+) -> anyhow::Result<()> {
     validate_ids(&parent_path)?;
     let root = collections_root(data_dir, workspace_id);
     if parent_path.is_empty() {
@@ -295,12 +460,18 @@ mod tests {
     fn create_folder_inside_collection() {
         let dir = tmp("create-folder");
         let col = create_collection(&dir, "ws1", "Root").unwrap();
-        let CollectionNode::Folder { id: col_id, .. } = col else { panic!() };
+        let CollectionNode::Folder { id: col_id, .. } = col else {
+            panic!()
+        };
         create_folder(&dir, "ws1", vec![col_id.clone()], "Sub").unwrap();
         let cols = list_collections(&dir, "ws1").unwrap();
-        let CollectionNode::Folder { children, .. } = &cols[0] else { panic!() };
+        let CollectionNode::Folder { children, .. } = &cols[0] else {
+            panic!()
+        };
         assert_eq!(children.len(), 1);
-        let CollectionNode::Folder { name, .. } = &children[0] else { panic!() };
+        let CollectionNode::Folder { name, .. } = &children[0] else {
+            panic!()
+        };
         assert_eq!(name, "Sub");
         fs::remove_dir_all(dir).unwrap();
     }
@@ -309,18 +480,33 @@ mod tests {
     fn create_request_in_collection() {
         let dir = tmp("create-req");
         let col = create_collection(&dir, "ws1", "Root").unwrap();
-        let CollectionNode::Folder { id: col_id, .. } = col else { panic!() };
+        let CollectionNode::Folder { id: col_id, .. } = col else {
+            panic!()
+        };
         create_request(
             &dir,
             "ws1",
             vec![col_id.clone()],
             "Get Users",
-            RequestKind::Rest { method: "GET".into(), url: "https://example.com/users".into() },
-        ).unwrap();
+            RequestKind::Rest {
+                method: "GET".into(),
+                url: "https://example.com/users".into(),
+            },
+        )
+        .unwrap();
         let cols = list_collections(&dir, "ws1").unwrap();
-        let CollectionNode::Folder { children, .. } = &cols[0] else { panic!() };
+        let CollectionNode::Folder { children, .. } = &cols[0] else {
+            panic!()
+        };
         assert_eq!(children.len(), 1);
-        let CollectionNode::Request { name, kind: RequestKind::Rest { method, .. }, .. } = &children[0] else { panic!() };
+        let CollectionNode::Request {
+            name,
+            kind: RequestKind::Rest { method, .. },
+            ..
+        } = &children[0]
+        else {
+            panic!()
+        };
         assert_eq!(name, "Get Users");
         assert_eq!(method, "GET");
         fs::remove_dir_all(dir).unwrap();
@@ -330,10 +516,14 @@ mod tests {
     fn rename_collection() {
         let dir = tmp("rename-col");
         let col = create_collection(&dir, "ws1", "Old").unwrap();
-        let CollectionNode::Folder { id, .. } = col else { panic!() };
+        let CollectionNode::Folder { id, .. } = col else {
+            panic!()
+        };
         rename_node(&dir, "ws1", vec![id], "New").unwrap();
         let cols = list_collections(&dir, "ws1").unwrap();
-        let CollectionNode::Folder { name, .. } = &cols[0] else { panic!() };
+        let CollectionNode::Folder { name, .. } = &cols[0] else {
+            panic!()
+        };
         assert_eq!(name, "New");
         fs::remove_dir_all(dir).unwrap();
     }
@@ -342,13 +532,31 @@ mod tests {
     fn rename_request() {
         let dir = tmp("rename-req");
         let col = create_collection(&dir, "ws1", "Col").unwrap();
-        let CollectionNode::Folder { id: col_id, .. } = col else { panic!() };
-        let req = create_request(&dir, "ws1", vec![col_id.clone()], "Old", RequestKind::Rest { method: "GET".into(), url: "u".into() }).unwrap();
-        let CollectionNode::Request { id: req_id, .. } = req else { panic!() };
+        let CollectionNode::Folder { id: col_id, .. } = col else {
+            panic!()
+        };
+        let req = create_request(
+            &dir,
+            "ws1",
+            vec![col_id.clone()],
+            "Old",
+            RequestKind::Rest {
+                method: "GET".into(),
+                url: "u".into(),
+            },
+        )
+        .unwrap();
+        let CollectionNode::Request { id: req_id, .. } = req else {
+            panic!()
+        };
         rename_node(&dir, "ws1", vec![col_id, req_id], "New").unwrap();
         let cols = list_collections(&dir, "ws1").unwrap();
-        let CollectionNode::Folder { children, .. } = &cols[0] else { panic!() };
-        let CollectionNode::Request { name, .. } = &children[0] else { panic!() };
+        let CollectionNode::Folder { children, .. } = &cols[0] else {
+            panic!()
+        };
+        let CollectionNode::Request { name, .. } = &children[0] else {
+            panic!()
+        };
         assert_eq!(name, "New");
         fs::remove_dir_all(dir).unwrap();
     }
@@ -359,12 +567,16 @@ mod tests {
         create_collection(&dir, "ws1", "A").unwrap();
         create_collection(&dir, "ws1", "B").unwrap();
         let cols = list_collections(&dir, "ws1").unwrap();
-        let CollectionNode::Folder { id: first_id, .. } = &cols[0] else { panic!() };
+        let CollectionNode::Folder { id: first_id, .. } = &cols[0] else {
+            panic!()
+        };
         let first_id = first_id.clone();
         delete_node(&dir, "ws1", vec![first_id]).unwrap();
         let cols = list_collections(&dir, "ws1").unwrap();
         assert_eq!(cols.len(), 1);
-        let CollectionNode::Folder { name, .. } = &cols[0] else { panic!() };
+        let CollectionNode::Folder { name, .. } = &cols[0] else {
+            panic!()
+        };
         assert_eq!(name, "B");
         fs::remove_dir_all(dir).unwrap();
     }
@@ -374,14 +586,117 @@ mod tests {
         let dir = tmp("reorder-cols");
         let a = create_collection(&dir, "ws1", "A").unwrap();
         let b = create_collection(&dir, "ws1", "B").unwrap();
-        let CollectionNode::Folder { id: a_id, .. } = a else { panic!() };
-        let CollectionNode::Folder { id: b_id, .. } = b else { panic!() };
+        let CollectionNode::Folder { id: a_id, .. } = a else {
+            panic!()
+        };
+        let CollectionNode::Folder { id: b_id, .. } = b else {
+            panic!()
+        };
         reorder_children(&dir, "ws1", vec![], vec![b_id.clone(), a_id.clone()]).unwrap();
         let cols = list_collections(&dir, "ws1").unwrap();
-        let CollectionNode::Folder { name: n0, .. } = &cols[0] else { panic!() };
-        let CollectionNode::Folder { name: n1, .. } = &cols[1] else { panic!() };
+        let CollectionNode::Folder { name: n0, .. } = &cols[0] else {
+            panic!()
+        };
+        let CollectionNode::Folder { name: n1, .. } = &cols[1] else {
+            panic!()
+        };
         assert_eq!(n0, "B");
         assert_eq!(n1, "A");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn update_and_get_request_roundtrip() {
+        let dir = tmp("update-req");
+        let col = create_collection(&dir, "ws1", "Col").unwrap();
+        let CollectionNode::Folder { id: col_id, .. } = col else {
+            panic!()
+        };
+        let req = create_request(
+            &dir,
+            "ws1",
+            vec![col_id.clone()],
+            "Get Users",
+            RequestKind::Rest {
+                method: "GET".into(),
+                url: "".into(),
+            },
+        )
+        .unwrap();
+        let CollectionNode::Request { id: req_id, .. } = req else {
+            panic!()
+        };
+        let path = vec![col_id, req_id];
+
+        let content = RequestContent {
+            kind: RequestKind::Rest {
+                method: "POST".into(),
+                url: "https://api.dev/users".into(),
+            },
+            params: vec![KeyValueEntry {
+                id: "p1".into(),
+                key: "page".into(),
+                value: "1".into(),
+                description: None,
+                enabled: true,
+                entry_type: None,
+            }],
+            headers: vec![],
+            body: Some(BodyData {
+                mode: "json".into(),
+                json: "{\"a\":1}".into(),
+                form: vec![],
+            }),
+            auth: Some(AuthData::Bearer {
+                token: "tok".into(),
+            }),
+        };
+        update_request(&dir, "ws1", path.clone(), content).unwrap();
+
+        let rf = get_request(&dir, "ws1", path).unwrap();
+        // name must be preserved (update_request never touches it)
+        assert_eq!(rf.name, "Get Users");
+        let RequestKind::Rest { method, url } = &rf.kind else {
+            panic!()
+        };
+        assert_eq!(method, "POST");
+        assert_eq!(url, "https://api.dev/users");
+        assert_eq!(rf.params.len(), 1);
+        assert_eq!(rf.params[0].key, "page");
+        assert!(rf.headers.is_empty());
+        assert_eq!(rf.body.as_ref().unwrap().json, "{\"a\":1}");
+        assert!(matches!(rf.auth, Some(AuthData::Bearer { .. })));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn get_request_on_minimal_file_defaults_empty() {
+        // create_request writes the pre-existing minimal shape (no content fields)
+        let dir = tmp("get-minimal");
+        let col = create_collection(&dir, "ws1", "Col").unwrap();
+        let CollectionNode::Folder { id: col_id, .. } = col else {
+            panic!()
+        };
+        let req = create_request(
+            &dir,
+            "ws1",
+            vec![col_id.clone()],
+            "Old",
+            RequestKind::Rest {
+                method: "GET".into(),
+                url: "u".into(),
+            },
+        )
+        .unwrap();
+        let CollectionNode::Request { id: req_id, .. } = req else {
+            panic!()
+        };
+
+        let rf = get_request(&dir, "ws1", vec![col_id, req_id]).unwrap();
+        assert!(rf.params.is_empty());
+        assert!(rf.headers.is_empty());
+        assert!(rf.body.is_none());
+        assert!(rf.auth.is_none());
         fs::remove_dir_all(dir).unwrap();
     }
 }

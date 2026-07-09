@@ -26,7 +26,11 @@ export function Sidebar() {
             className="text-sidebar-muted cursor-pointer hover:text-foreground"
             onClick={() => treeRef.current?.startCreate()}
           />
-          <Plus size={14} className="text-sidebar-muted cursor-pointer hover:text-foreground" />
+          <Plus
+            size={14}
+            className="text-sidebar-muted cursor-pointer hover:text-foreground"
+            onClick={() => treeRef.current?.startCreateRequest()}
+          />
         </div>
       </div>
 

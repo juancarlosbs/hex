@@ -7,7 +7,7 @@ interface CollectionState {
   load: (workspaceId: string) => Promise<void>;
   addCollection: (workspaceId: string, name: string) => Promise<void>;
   addFolder: (workspaceId: string, parentPath: string[], name: string) => Promise<void>;
-  addRequest: (workspaceId: string, parentPath: string[], name: string, kind: RequestKind) => Promise<void>;
+  addRequest: (workspaceId: string, parentPath: string[], name: string, kind: RequestKind) => Promise<CollectionNode | null>;
   rename: (workspaceId: string, path: string[], name: string) => Promise<void>;
   remove: (workspaceId: string, path: string[]) => Promise<void>;
   reorder: (workspaceId: string, parentPath: string[], orderedIds: string[]) => Promise<void>;
@@ -46,8 +46,10 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     try {
       const node = await api.createRequest(workspaceId, parentPath, name, kind);
       set((s) => ({ collections: insertNode(s.collections, parentPath, node) }));
+      return node;
     } catch (e) {
       console.error("createRequest failed:", e);
+      return null;
     }
   },
 

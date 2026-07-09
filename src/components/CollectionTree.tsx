@@ -98,6 +98,7 @@ function RenameInput({
 }) {
   const [value, setValue] = useState(initial);
   const ref = useRef<HTMLInputElement>(null);
+  const committed = useRef(false);
 
   useEffect(() => { ref.current?.select(); }, []);
 
@@ -108,10 +109,22 @@ function RenameInput({
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {
-        if (e.key === "Enter") onCommit(value.trim() || initial);
-        if (e.key === "Escape") onCancel();
+        if (e.key === "Enter") {
+          if (committed.current) return;
+          committed.current = true;
+          onCommit(value.trim() || initial);
+        }
+        if (e.key === "Escape") {
+          if (committed.current) return;
+          committed.current = true;
+          onCancel();
+        }
       }}
-      onBlur={() => onCommit(value.trim() || initial)}
+      onBlur={() => {
+        if (committed.current) return;
+        committed.current = true;
+        onCommit(value.trim() || initial);
+      }}
       autoFocus
     />
   );

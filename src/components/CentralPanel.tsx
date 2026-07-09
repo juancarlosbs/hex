@@ -1,7 +1,7 @@
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { Sidebar } from "./Sidebar";
 import { RequestPanel } from "./request/RequestPanel";
-import { ResponsePlaceholder } from "./response/ResponsePlaceholder";
+import { ResponsePanel } from "./response/ResponsePanel";
 
 export function CentralPanel() {
   return (
@@ -13,7 +13,7 @@ export function CentralPanel() {
         </Panel>
         <Separator className="w-[1px] bg-border hover:bg-primary/40 transition-colors" />
         <Panel defaultSize={40} minSize={20}>
-          <ResponsePlaceholder />
+          <ResponsePanel />
         </Panel>
       </Group>
     </div>

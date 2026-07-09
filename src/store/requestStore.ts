@@ -3,19 +3,24 @@ import { create } from "zustand";
 import {
   AuthConfig,
   BodyMode,
+  HTTP_METHODS,
   HttpMethod,
   KeyValue,
   OpenRequest,
   RequestTab,
   makeEmptyRequest,
 } from "../lib/request-types";
+import { api, RequestFileData } from "../lib/api";
+import { useWorkspaceStore } from "./workspaceStore";
+import { useCollectionStore } from "./collectionStore";
 
 interface RequestState {
   openRequests: Record<string, OpenRequest>;
   order: string[]; // tab order in titlebar
   activeId: string | null;
 
-  openRequest(id: string, name: string, method?: HttpMethod): void;
+  openRequest(id: string, name: string, path: string[]): Promise<void>;
+  saveRequest(id: string): Promise<void>;
   closeRequest(id: string): void;
   setActive(id: string | null): void;
 
@@ -38,20 +43,51 @@ interface RequestState {
 
 const uid = () => crypto.randomUUID();
 
-export const useRequestStore = create<RequestState>((set) => ({
+export const useRequestStore = create<RequestState>((set, get) => ({
   openRequests: {},
   order: [],
   activeId: null,
 
-  openRequest(id, name, method = "GET") {
-    set((s) => {
-      if (s.openRequests[id]) return { ...s, activeId: id };
-      return {
-        openRequests: { ...s.openRequests, [id]: makeEmptyRequest(id, name, method) },
-        order: [...s.order, id],
-        activeId: id,
-      };
-    });
+  async openRequest(id, name, path) {
+    if (get().openRequests[id]) {
+      set({ activeId: id });
+      return;
+    }
+    const workspaceId = useWorkspaceStore.getState().activeId;
+    let req: OpenRequest;
+    try {
+      const data = await api.getRequest(workspaceId, path);
+      req = fromFile(data, path);
+    } catch (e) {
+      console.error("getRequest failed:", e);
+      req = makeEmptyRequest(id, name, "GET", path);
+    }
+    set((s) => ({
+      openRequests: { ...s.openRequests, [id]: req },
+      order: s.order.includes(id) ? s.order : [...s.order, id],
+      activeId: id,
+    }));
+  },
+
+  async saveRequest(id) {
+    const r = get().openRequests[id];
+    if (!r) return;
+    const workspaceId = useWorkspaceStore.getState().activeId;
+    try {
+      await api.updateRequest(workspaceId, r.path, {
+        kind: "rest",
+        method: r.method,
+        url: r.url,
+        params: r.params,
+        headers: r.headers,
+        body: r.body,
+        auth: r.auth,
+      });
+      set((s) => ({ openRequests: patch(s.openRequests, id, { dirty: false }) }));
+      useCollectionStore.getState().updateRequestMeta(r.path, r.method, r.url);
+    } catch (e) {
+      console.error("saveRequest failed:", e);
+    }
   },
 
   closeRequest(id) {
@@ -66,10 +102,10 @@ export const useRequestStore = create<RequestState>((set) => ({
   setActive(id) { set({ activeId: id }); },
 
   setUrl(id, url) {
-    set((s) => ({ openRequests: patch(s.openRequests, id, { url }) }));
+    set((s) => ({ openRequests: patch(s.openRequests, id, { url, dirty: true }) }));
   },
   setMethod(id, method) {
-    set((s) => ({ openRequests: patch(s.openRequests, id, { method }) }));
+    set((s) => ({ openRequests: patch(s.openRequests, id, { method, dirty: true }) }));
   },
   setActiveTab(id, activeTab) {
     set((s) => ({ openRequests: patch(s.openRequests, id, { activeTab }) }));
@@ -80,7 +116,7 @@ export const useRequestStore = create<RequestState>((set) => ({
       const r = s.openRequests[id];
       if (!r) return s;
       const list = r[section].map((x) => (x.id === row.id ? row : x));
-      return { openRequests: patch(s.openRequests, id, { [section]: list }) };
+      return { openRequests: patch(s.openRequests, id, { [section]: list, dirty: true }) };
     });
   },
   addKV(id, section) {
@@ -88,7 +124,7 @@ export const useRequestStore = create<RequestState>((set) => ({
       const r = s.openRequests[id];
       if (!r) return s;
       const list = [...r[section], { id: uid(), key: "", value: "", enabled: true }];
-      return { openRequests: patch(s.openRequests, id, { [section]: list }) };
+      return { openRequests: patch(s.openRequests, id, { [section]: list, dirty: true }) };
     });
   },
   removeKV(id, section, rowId) {
@@ -96,7 +132,7 @@ export const useRequestStore = create<RequestState>((set) => ({
       const r = s.openRequests[id];
       if (!r) return s;
       const list = r[section].filter((x) => x.id !== rowId);
-      return { openRequests: patch(s.openRequests, id, { [section]: list }) };
+      return { openRequests: patch(s.openRequests, id, { [section]: list, dirty: true }) };
     });
   },
 
@@ -104,14 +140,14 @@ export const useRequestStore = create<RequestState>((set) => ({
     set((s) => {
       const r = s.openRequests[id];
       if (!r) return s;
-      return { openRequests: patch(s.openRequests, id, { body: { ...r.body, mode } }) };
+      return { openRequests: patch(s.openRequests, id, { body: { ...r.body, mode }, dirty: true }) };
     });
   },
   setBodyJson(id, json) {
     set((s) => {
       const r = s.openRequests[id];
       if (!r) return s;
-      return { openRequests: patch(s.openRequests, id, { body: { ...r.body, json } }) };
+      return { openRequests: patch(s.openRequests, id, { body: { ...r.body, json }, dirty: true }) };
     });
   },
   setFormRow(id, row) {
@@ -119,7 +155,7 @@ export const useRequestStore = create<RequestState>((set) => ({
       const r = s.openRequests[id];
       if (!r) return s;
       const form = r.body.form.map((x) => (x.id === row.id ? row : x));
-      return { openRequests: patch(s.openRequests, id, { body: { ...r.body, form } }) };
+      return { openRequests: patch(s.openRequests, id, { body: { ...r.body, form }, dirty: true }) };
     });
   },
   addFormRow(id) {
@@ -130,7 +166,7 @@ export const useRequestStore = create<RequestState>((set) => ({
         ...r.body.form,
         { id: uid(), key: "", value: "", enabled: true, type: "text" as const },
       ];
-      return { openRequests: patch(s.openRequests, id, { body: { ...r.body, form } }) };
+      return { openRequests: patch(s.openRequests, id, { body: { ...r.body, form }, dirty: true }) };
     });
   },
   removeFormRow(id, rowId) {
@@ -138,12 +174,12 @@ export const useRequestStore = create<RequestState>((set) => ({
       const r = s.openRequests[id];
       if (!r) return s;
       const form = r.body.form.filter((x) => x.id !== rowId);
-      return { openRequests: patch(s.openRequests, id, { body: { ...r.body, form } }) };
+      return { openRequests: patch(s.openRequests, id, { body: { ...r.body, form }, dirty: true }) };
     });
   },
 
   setAuth(id, auth) {
-    set((s) => ({ openRequests: patch(s.openRequests, id, { auth }) }));
+    set((s) => ({ openRequests: patch(s.openRequests, id, { auth, dirty: true }) }));
   },
 }));
 
@@ -155,4 +191,23 @@ function patch(
   const cur = map[id];
   if (!cur) return map;
   return { ...map, [id]: { ...cur, ...fields } };
+}
+
+function fromFile(data: RequestFileData, path: string[]): OpenRequest {
+  const method: HttpMethod = (HTTP_METHODS as readonly string[]).includes(data.method ?? "")
+    ? (data.method as HttpMethod)
+    : "GET";
+  return {
+    id: data.id,
+    name: data.name,
+    method,
+    url: data.url ?? "",
+    activeTab: "params",
+    params: data.params ?? [],
+    headers: data.headers ?? [],
+    body: data.body ?? { mode: "json", json: "", form: [] },
+    auth: data.auth ?? { type: "none" },
+    path,
+    dirty: false,
+  };
 }

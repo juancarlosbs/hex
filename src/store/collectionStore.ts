@@ -11,6 +11,7 @@ interface CollectionState {
   rename: (workspaceId: string, path: string[], name: string) => Promise<void>;
   remove: (workspaceId: string, path: string[]) => Promise<void>;
   reorder: (workspaceId: string, parentPath: string[], orderedIds: string[]) => Promise<void>;
+  updateRequestMeta: (path: string[], method: string, url: string) => void;
   setActiveRequest: (id: string | null) => void;
 }
 
@@ -83,6 +84,10 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     }
   },
 
+  updateRequestMeta(path, method, url) {
+    set((s) => ({ collections: updateRequestNode(s.collections, path, method, url) }));
+  },
+
   setActiveRequest(id) {
     set({ activeRequestId: id });
   },
@@ -123,5 +128,17 @@ function reorderInTree(tree: CollectionNode[], parentPath: string[], orderedIds:
   return tree.map((n) => {
     if (n.type !== "folder" || n.id !== parentPath[0]) return n;
     return { ...n, children: reorderInTree(n.children, parentPath.slice(1), orderedIds) };
+  });
+}
+
+function updateRequestNode(tree: CollectionNode[], path: string[], method: string, url: string): CollectionNode[] {
+  if (path.length === 1) {
+    return tree.map((n) =>
+      n.id === path[0] && n.type === "request" && n.kind === "rest" ? { ...n, method, url } : n
+    );
+  }
+  return tree.map((n) => {
+    if (n.type !== "folder" || n.id !== path[0]) return n;
+    return { ...n, children: updateRequestNode(n.children, path.slice(1), method, url) };
   });
 }

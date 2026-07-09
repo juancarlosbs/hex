@@ -53,9 +53,17 @@ export interface OpenRequest {
   headers: KeyValue[];
   body: RestBody;
   auth: AuthConfig;
+  /** collection-tree path to the request file (ids from root to the request) */
+  path: string[];
+  dirty: boolean;
 }
 
-export function makeEmptyRequest(id: string, name: string, method: HttpMethod = "GET"): OpenRequest {
+export function makeEmptyRequest(
+  id: string,
+  name: string,
+  method: HttpMethod = "GET",
+  path: string[] = [],
+): OpenRequest {
   return {
     id,
     name,
@@ -66,5 +74,7 @@ export function makeEmptyRequest(id: string, name: string, method: HttpMethod = 
     headers: [],
     body: { mode: "json", json: "", form: [] },
     auth: { type: "none" },
+    path,
+    dirty: false,
   };
 }

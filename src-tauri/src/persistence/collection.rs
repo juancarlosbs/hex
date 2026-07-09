@@ -95,7 +95,6 @@ pub struct RequestFile {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-#[allow(dead_code)]
 pub struct RequestContent {
     #[serde(flatten)]
     pub kind: RequestKind,
@@ -288,10 +287,7 @@ pub fn create_request(
         body: None,
         auth: None,
     };
-    std::fs::write(
-        parent_dir.join(format!("{id}.toml")),
-        toml::to_string(&rf)?,
-    )?;
+    std::fs::write(parent_dir.join(format!("{id}.toml")), toml::to_string(&rf)?)?;
     let mut parent_meta = read_folder_meta(&parent_dir)?;
     parent_meta.children_order.push(id.clone());
     write_folder_meta(&parent_dir, &parent_meta)?;
@@ -302,14 +298,12 @@ pub fn create_request(
     })
 }
 
-#[allow(dead_code)]
 fn request_file_path(root: &Path, path: &[String]) -> anyhow::Result<PathBuf> {
     let id = path.last().ok_or_else(|| anyhow::anyhow!("empty path"))?;
     let parent = resolve_path(root, &path[..path.len() - 1]);
     Ok(parent.join(format!("{id}.toml")))
 }
 
-#[allow(dead_code)]
 pub fn get_request(
     data_dir: &Path,
     workspace_id: &str,
@@ -321,7 +315,6 @@ pub fn get_request(
     Ok(toml::from_str(&std::fs::read_to_string(file)?)?)
 }
 
-#[allow(dead_code)]
 pub fn update_request(
     data_dir: &Path,
     workspace_id: &str,

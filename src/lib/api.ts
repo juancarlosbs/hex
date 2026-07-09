@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { KeyValue, RestBody, AuthConfig } from "./request-types";
 
 export type RequestKind =
   | { kind: "rest"; method: string; url: string }
@@ -7,6 +8,28 @@ export type RequestKind =
 export type CollectionNode =
   | { type: "folder"; id: string; name: string; children: CollectionNode[] }
   | ({ type: "request"; id: string; name: string } & RequestKind);
+
+export interface RequestContent {
+  kind: "rest";
+  method: string;
+  url: string;
+  params: KeyValue[];
+  headers: KeyValue[];
+  body: RestBody;
+  auth: AuthConfig;
+}
+
+export interface RequestFileData {
+  id: string;
+  name: string;
+  kind: "rest" | "soap";
+  method?: string;
+  url?: string;
+  params?: KeyValue[];
+  headers?: KeyValue[];
+  body?: RestBody;
+  auth?: AuthConfig;
+}
 
 export const api = {
   listCollections: (workspaceId: string) =>
@@ -29,4 +52,10 @@ export const api = {
 
   reorderChildren: (workspaceId: string, parentPath: string[], orderedIds: string[]) =>
     invoke<void>("reorder_children", { workspaceId, parentPath, orderedIds }),
+
+  getRequest: (workspaceId: string, path: string[]) =>
+    invoke<RequestFileData>("get_request", { workspaceId, path }),
+
+  updateRequest: (workspaceId: string, path: string[], content: RequestContent) =>
+    invoke<void>("update_request", { workspaceId, path, content }),
 };

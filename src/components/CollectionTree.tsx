@@ -277,6 +277,7 @@ function SortableFolderItem({
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const rename = useCollectionStore((s) => s.rename);
   const remove = useCollectionStore((s) => s.remove);
+  const closeRequestsUnder = useRequestStore((s) => s.closeRequestsUnder);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: node.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
@@ -288,7 +289,10 @@ function SortableFolderItem({
 
   function handleAction(a: MenuAction) {
     if (a.type === "rename") setRenaming(true);
-    if (a.type === "delete") remove(workspaceId, path);
+    if (a.type === "delete") {
+      remove(workspaceId, path);
+      closeRequestsUnder(path);
+    }
     if (a.type === "newFolder") { setOpen(true); onPendingCreate(path, "folder"); }
     if (a.type === "newRequest") { setOpen(true); onPendingCreate(path, "request"); }
   }

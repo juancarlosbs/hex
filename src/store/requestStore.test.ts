@@ -7,7 +7,7 @@ vi.mock("../lib/api", () => ({
   },
 }));
 vi.mock("./workspaceStore", () => ({
-  useWorkspaceStore: { getState: () => ({ activeId: "ws1" }) },
+  useWorkspaceStore: { getState: () => ({ activeId: "ws1" }), subscribe: vi.fn() },
 }));
 vi.mock("./collectionStore", () => ({
   useCollectionStore: { getState: () => ({ updateRequestMeta: vi.fn() }) },
@@ -60,6 +60,25 @@ describe("dirty tracking", () => {
     await savePromise;
 
     expect(useRequestStore.getState().openRequests.r1.dirty).toBe(true);
+  });
+
+  it("closeRequestsUnder closes only tabs whose path is under the given prefix", () => {
+    useRequestStore.setState({
+      openRequests: {
+        rA: makeEmptyRequest("rA", "RA", "GET", ["c1", "f1", "rA"]),
+        rB: makeEmptyRequest("rB", "RB", "GET", ["c2", "rB"]),
+      },
+      order: ["rA", "rB"],
+      activeId: "rA",
+    });
+
+    useRequestStore.getState().closeRequestsUnder(["c1", "f1"]);
+
+    const s = useRequestStore.getState();
+    expect(s.openRequests.rA).toBeUndefined();
+    expect(s.openRequests.rB).toBeDefined();
+    expect(s.order).toEqual(["rB"]);
+    expect(s.activeId).toBe("rB");
   });
 
   it("concurrent openRequest calls for the same id do not duplicate the tab", async () => {

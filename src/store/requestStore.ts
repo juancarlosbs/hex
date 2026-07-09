@@ -22,6 +22,8 @@ interface RequestState {
   openRequest(id: string, name: string, path: string[]): Promise<void>;
   saveRequest(id: string): Promise<void>;
   closeRequest(id: string): void;
+  closeRequestsUnder(prefix: string[]): void;
+  closeAll(): void;
   setActive(id: string | null): void;
 
   setUrl(id: string, url: string): void;
@@ -105,6 +107,26 @@ export const useRequestStore = create<RequestState>((set, get) => ({
       const activeId = s.activeId === id ? (order[order.length - 1] ?? null) : s.activeId;
       return { openRequests: rest, order, activeId };
     });
+  },
+
+  closeRequestsUnder(prefix) {
+    set((s) => {
+      const isUnder = (path: string[]) =>
+        path.length >= prefix.length && prefix.every((v, i) => path[i] === v);
+      const removedIds = Object.keys(s.openRequests).filter((id) => isUnder(s.openRequests[id].path));
+      if (removedIds.length === 0) return s;
+      const removed = new Set(removedIds);
+      const openRequests = Object.fromEntries(
+        Object.entries(s.openRequests).filter(([id]) => !removed.has(id))
+      );
+      const order = s.order.filter((id) => !removed.has(id));
+      const activeId = s.activeId && removed.has(s.activeId) ? (order[order.length - 1] ?? null) : s.activeId;
+      return { openRequests, order, activeId };
+    });
+  },
+
+  closeAll() {
+    set({ openRequests: {}, order: [], activeId: null });
   },
 
   setActive(id) { set({ activeId: id }); },
@@ -219,3 +241,9 @@ function fromFile(data: RequestFileData, path: string[]): OpenRequest {
     dirty: false,
   };
 }
+
+// Close all open tabs when the active workspace changes — tabs belong to the
+// workspace they were opened from; keeping them open would save against the wrong workspace.
+useWorkspaceStore.subscribe((state, prev) => {
+  if (state.activeId !== prev.activeId) useRequestStore.getState().closeAll();
+});

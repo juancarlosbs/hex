@@ -153,7 +153,9 @@ function SortableList({
   onCreationDone: () => void;
 }) {
   const reorder = useCollectionStore((s) => s.reorder);
-  const sensors = useSensors(useSensor(PointerSensor));
+  // distance constraint: without it, any pointerdown (incl. bubbled from context-menu
+  // buttons) activates a drag and pointer capture swallows the click
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;

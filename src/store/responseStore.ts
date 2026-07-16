@@ -60,6 +60,7 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
   clear(id) {
     set((s) => {
       const { [id]: _r, ...responses } = s.responses;
+      // seq is kept and bumped (not deleted) so an in-flight send from before the clear is discarded
       return { seq: { ...s.seq, [id]: (s.seq[id] ?? 0) + 1 }, responses };
     });
   },

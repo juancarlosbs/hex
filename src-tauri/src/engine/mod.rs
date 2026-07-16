@@ -62,11 +62,9 @@ fn build_request(client: &reqwest::Client, spec: &SendSpec) -> Result<reqwest::R
     match spec.body.mode.as_str() {
         "json" => {
             if !spec.body.json.is_empty() {
-                let has_content_type =
-                    enabled(&spec.headers).any(|kv| kv.key.eq_ignore_ascii_case("content-type"));
-                if !has_content_type {
-                    rb = rb.header("Content-Type", "application/json");
-                }
+                // a user Content-Type header always wins: the post-build insert below
+                // replaces this default, so no absence check is needed here
+                rb = rb.header("Content-Type", "application/json");
                 rb = rb.body(spec.body.json.clone());
             }
         }

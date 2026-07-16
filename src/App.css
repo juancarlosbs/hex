@@ -9,13 +9,25 @@
   --color-muted: #666666;
   --color-method-get: #3fb950;
   --color-method-post: #e3b341;
+  --color-method-put: #ff8400;
+  --color-method-patch: #58a6ff;
   --color-method-delete: #ff5c33;
+  --color-method-head: #b8b9b6;
+  --color-method-options: #b8b9b6;
   --color-soap-op: #a78bfa;
+  --color-soap-op-surface: #1c1530;
+  --color-destructive: #ff5c33;
+  --color-ring: #666666;
   --color-primary: #ff8400;
   --color-primary-foreground: #111111;
   --color-sidebar: #18181b;
   --color-sidebar-accent: #2a2a30;
   --color-sidebar-muted: #b8b9b6;
+
+  --color-status-2xx: #3fb950;
+  --color-status-3xx: #58a6ff;
+  --color-status-4xx: #e3b341;
+  --color-status-5xx: #ff5c33;
 
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;

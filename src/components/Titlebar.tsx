@@ -1,9 +1,11 @@
 import React, { useState } from "react";
-import { Search, Settings, X, Hexagon } from "lucide-react";
+import { Search, Settings, X } from "lucide-react";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { EnvSelector } from "./EnvSelector";
 import { AddWorkspaceModal } from "./AddWorkspaceModal";
 import { SettingsDialog } from "./SettingsDialog";
+import { useRequestStore } from "../store/requestStore";
+import { useCollectionStore } from "../store/collectionStore";
 
 const METHOD_COLORS: Record<string, string> = {
   GET: "text-method-get",
@@ -13,41 +15,105 @@ const METHOD_COLORS: Record<string, string> = {
   PATCH: "text-method-post",
 };
 
-type RestTab = { kind: "rest"; method: string; path: string; active?: boolean };
-type SoapTab = { kind: "soap"; operation: string; active?: boolean };
-type Tab = RestTab | SoapTab;
+function RequestTabs() {
+  const order = useRequestStore((s) => s.order);
+  const openRequests = useRequestStore((s) => s.openRequests);
+  const activeId = useRequestStore((s) => s.activeId);
+  const setActive = useRequestStore((s) => s.setActive);
+  const closeRequest = useRequestStore((s) => s.closeRequest);
+  const setActiveRequest = useCollectionStore((s) => s.setActiveRequest);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
-function TabItem({ tab, onClose }: { tab: Tab; onClose: () => void }) {
-  const active = tab.active;
+  function activate(id: string) {
+    setActive(id);
+    setActiveRequest(id);
+  }
+
+  function requestClose(id: string) {
+    if (openRequests[id]?.dirty) setConfirmId(id);
+    else doClose(id);
+  }
+
+  function doClose(id: string) {
+    closeRequest(id);
+    setActiveRequest(useRequestStore.getState().activeId);
+  }
+
   return (
-    <div
-      className={`flex items-center gap-[7px] px-[10px] py-[7px] rounded-[4px] cursor-pointer select-none
-        ${active ? "bg-background border border-border" : "bg-transparent border border-transparent"}`}
-    >
-      {tab.kind === "rest" ? (
-        <span className={`text-[10px] font-bold ${METHOD_COLORS[tab.method] ?? "text-muted"}`}>
-          {tab.method}
-        </span>
-      ) : (
-        <Hexagon size={13} className="text-soap-op" />
+    <>
+      <div
+        className="flex items-center gap-[6px]"
+        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+      >
+        {order.map((id) => {
+          const req = openRequests[id];
+          if (!req) return null;
+          const active = id === activeId;
+          return (
+            <div
+              key={id}
+              onClick={() => activate(id)}
+              className={`flex items-center gap-[7px] px-[10px] py-[7px] rounded-[4px] cursor-pointer select-none
+                ${active ? "bg-background border border-border" : "bg-transparent border border-transparent"}`}
+            >
+              <span className={`text-[10px] font-bold ${METHOD_COLORS[req.method] ?? "text-muted"}`}>
+                {req.method}
+              </span>
+              <span className={`text-[12px] ${active ? "text-foreground font-semibold" : "text-muted"}`}>
+                {req.name}
+              </span>
+              {req.dirty && <span className="w-[6px] h-[6px] rounded-full bg-accent shrink-0" />}
+              <X
+                size={12}
+                className={`text-muted ${active ? "opacity-100" : "opacity-50"} hover:opacity-100`}
+                onClick={(e) => { e.stopPropagation(); requestClose(id); }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      {confirmId && (
+        <DiscardChangesDialog
+          onCancel={() => setConfirmId(null)}
+          onDiscard={() => { doClose(confirmId); setConfirmId(null); }}
+        />
       )}
-      <span className={`text-[12px] ${active ? "text-foreground font-semibold" : "text-muted"}`}>
-        {tab.kind === "rest" ? tab.path : tab.operation}
-      </span>
-      <X
-        size={12}
-        className={`text-muted ${active ? "opacity-100" : "opacity-50"} hover:opacity-100`}
-        onClick={(e) => { e.stopPropagation(); onClose(); }}
-      />
-    </div>
+    </>
   );
 }
 
-const INITIAL_TABS: Tab[] = [
-  { kind: "rest", method: "GET", path: "/users" },
-  { kind: "soap", operation: "GetBalance" },
-  { kind: "rest", method: "POST", path: "/auth/token", active: true },
-];
+function DiscardChangesDialog({ onCancel, onDiscard }: { onCancel: () => void; onDiscard: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      onPointerDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
+    >
+      <div className="w-[360px] rounded-[6px] bg-card border border-border overflow-hidden">
+        <div className="px-5 py-4">
+          <span className="text-[15px] font-semibold text-foreground">Discard changes?</span>
+          <p className="mt-2 text-[13px] text-muted">
+            This request has unsaved changes. Closing the tab will discard them.
+          </p>
+        </div>
+        <div className="h-px bg-border" />
+        <div className="flex items-center justify-end gap-[10px] px-5 py-[14px]">
+          <button
+            className="px-4 py-[7px] rounded-[4px] text-[13px] font-medium text-foreground bg-secondary border border-border hover:bg-secondary/80 cursor-pointer"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+          <button
+            className="px-4 py-[7px] rounded-[4px] text-[13px] font-semibold cursor-pointer bg-accent text-accent-foreground hover:bg-accent/90"
+            onClick={onDiscard}
+          >
+            Discard
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const ENVS = [
   { name: "Development" },
@@ -73,14 +139,7 @@ export function Titlebar() {
           onManageWorkspaces={() => setSettingsSection("workspaces")}
         />
 
-        <div
-          className="flex items-center gap-[6px]"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-        >
-          {INITIAL_TABS.map((tab, i) => (
-            <TabItem key={i} tab={tab} onClose={() => {}} />
-          ))}
-        </div>
+        <RequestTabs />
 
         <div className="flex-1" />
 

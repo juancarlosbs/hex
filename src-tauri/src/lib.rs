@@ -14,6 +14,8 @@ pub fn run() {
             commands::rename_node,
             commands::delete_node,
             commands::reorder_children,
+            commands::get_request,
+            commands::update_request,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,9 +1,9 @@
 use crate::persistence::collection::{AuthData, BodyData, KeyValueEntry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 pub struct SendSpec {
     pub method: String,
     pub url: String,
@@ -17,7 +17,6 @@ pub struct SendSpec {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub struct HttpResponse {
     pub status: u16,
     pub status_text: String,
@@ -27,12 +26,10 @@ pub struct HttpResponse {
     pub body: String,
 }
 
-#[allow(dead_code)]
 fn enabled(list: &[KeyValueEntry]) -> impl Iterator<Item = &KeyValueEntry> {
     list.iter().filter(|kv| kv.enabled && !kv.key.is_empty())
 }
 
-#[allow(dead_code)]
 fn build_request(client: &reqwest::Client, spec: &SendSpec) -> Result<reqwest::Request, String> {
     let method = reqwest::Method::from_bytes(spec.method.as_bytes())
         .map_err(|_| format!("invalid method: {}", spec.method))?;
@@ -92,6 +89,47 @@ fn build_request(client: &reqwest::Client, spec: &SendSpec) -> Result<reqwest::R
         req.headers_mut().insert(name, value);
     }
     Ok(req)
+}
+
+pub async fn send(spec: SendSpec) -> Result<HttpResponse, String> {
+    // ponytail: per-send client, no pooling; shared OnceLock client when reuse matters
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let req = build_request(&client, &spec)?;
+
+    let start = Instant::now();
+    let resp = client.execute(req).await.map_err(|e| {
+        if e.is_timeout() {
+            "request timed out after 30s".to_string()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    let status = resp.status();
+    let mut headers: HashMap<String, String> = HashMap::new();
+    for (name, value) in resp.headers() {
+        let v = value.to_str().unwrap_or("<binary>").to_string();
+        headers
+            .entry(name.to_string())
+            .and_modify(|existing| {
+                existing.push_str(", ");
+                existing.push_str(&v);
+            })
+            .or_insert(v.clone());
+    }
+
+    let body = resp.text().await.map_err(|e| e.to_string())?;
+    Ok(HttpResponse {
+        status: status.as_u16(),
+        status_text: status.canonical_reason().unwrap_or("").to_string(),
+        time_ms: start.elapsed().as_millis() as u64,
+        size_bytes: body.len() as u64,
+        headers,
+        body,
+    })
 }
 
 #[cfg(test)]
@@ -295,5 +333,48 @@ mod tests {
         s.body.mode = "form-multipart".into();
         let err = build(&s).unwrap_err();
         assert!(err.contains("not supported yet"));
+    }
+
+    /// Minimal one-shot HTTP server on a random port; replies with `response` and closes.
+    fn spawn_test_server(response: &'static str) -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                use std::io::{Read, Write};
+                let mut buf = [0u8; 4096];
+                let _ = stream.read(&mut buf);
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn send_returns_status_headers_body_time_and_size() {
+        let url = spawn_test_server(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 11\r\nconnection: close\r\n\r\n{\"ok\":true}",
+        );
+        let resp = send(spec(&url)).await.unwrap();
+        assert_eq!(resp.status, 200);
+        assert_eq!(resp.status_text, "OK");
+        assert_eq!(resp.body, "{\"ok\":true}");
+        assert_eq!(resp.size_bytes, 11);
+        assert_eq!(
+            resp.headers.get("content-type").unwrap(),
+            "application/json"
+        );
+        assert!(resp.time_ms < 30_000);
+    }
+
+    #[tokio::test]
+    async fn send_maps_connection_error_to_string() {
+        // Bind then drop a listener so the port is very likely closed.
+        let addr = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            l.local_addr().unwrap()
+        };
+        let err = send(spec(&format!("http://{addr}"))).await.unwrap_err();
+        assert!(!err.is_empty());
     }
 }

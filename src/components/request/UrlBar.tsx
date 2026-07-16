@@ -1,7 +1,8 @@
 // src/components/request/UrlBar.tsx
-import { CornerDownLeft } from "lucide-react";
+import { CornerDownLeft, X } from "lucide-react";
 import { MethodDropdown } from "./MethodDropdown";
 import { useRequestStore } from "../../store/requestStore";
+import { useResponseStore } from "../../store/responseStore";
 
 interface UrlBarProps {
   requestId: string;
@@ -11,6 +12,9 @@ export function UrlBar({ requestId }: UrlBarProps) {
   const req = useRequestStore((s) => s.openRequests[requestId]);
   const setUrl = useRequestStore((s) => s.setUrl);
   const setMethod = useRequestStore((s) => s.setMethod);
+  const loading = useResponseStore((s) => s.responses[requestId]?.state === "loading");
+  const send = useResponseStore((s) => s.send);
+  const cancel = useResponseStore((s) => s.cancel);
 
   if (!req) return null;
 
@@ -28,12 +32,13 @@ export function UrlBar({ requestId }: UrlBarProps) {
 
       <button
         type="button"
+        onClick={() => (loading ? cancel(requestId) : send(req))}
         className="flex items-center gap-2 px-5 py-[10px] rounded-[6px] bg-primary text-primary-foreground text-[13px] font-semibold cursor-pointer hover:opacity-90"
         style={{ fontFamily: "var(--font-sans)" }}
-        title="Send (⌘↵)"
+        title={loading ? "Cancel" : "Send (⌘↵)"}
       >
-        Send
-        <CornerDownLeft size={14} />
+        {loading ? "Cancel" : "Send"}
+        {loading ? <X size={14} /> : <CornerDownLeft size={14} />}
       </button>
     </div>
   );

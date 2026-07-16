@@ -62,6 +62,27 @@ fn build_request(client: &reqwest::Client, spec: &SendSpec) -> Result<reqwest::R
         }
     }
 
+    match spec.body.mode.as_str() {
+        "json" => {
+            if !spec.body.json.is_empty() {
+                let has_content_type =
+                    enabled(&spec.headers).any(|kv| kv.key.eq_ignore_ascii_case("content-type"));
+                if !has_content_type {
+                    rb = rb.header("Content-Type", "application/json");
+                }
+                rb = rb.body(spec.body.json.clone());
+            }
+        }
+        "form-urlencoded" => {
+            let pairs: Vec<(&str, &str)> = enabled(&spec.body.form)
+                .map(|kv| (kv.key.as_str(), kv.value.as_str()))
+                .collect();
+            rb = rb.form(&pairs);
+        }
+        "form-multipart" => return Err("multipart body is not supported yet".into()),
+        other => return Err(format!("unknown body mode: {other}")),
+    }
+
     let mut req = rb.build().map_err(|e| e.to_string())?;
     for kv in enabled(&spec.headers) {
         let name = reqwest::header::HeaderName::from_bytes(kv.key.as_bytes())
@@ -212,5 +233,67 @@ mod tests {
         let mut s = spec("https://api.dev");
         s.headers = vec![kv("bad name", "v", true)];
         assert!(build(&s).is_err());
+    }
+
+    #[test]
+    fn json_body_sets_content_type_when_absent() {
+        let mut s = spec("https://api.dev");
+        s.method = "POST".into();
+        s.body.json = r#"{"a":1}"#.into();
+        let req = build(&s).unwrap();
+        assert_eq!(
+            req.headers().get("content-type").unwrap(),
+            "application/json"
+        );
+        let body = req.body().unwrap().as_bytes().unwrap();
+        assert_eq!(body, br#"{"a":1}"#);
+    }
+
+    #[test]
+    fn json_body_respects_user_content_type() {
+        let mut s = spec("https://api.dev");
+        s.method = "POST".into();
+        s.body.json = "<x/>".into();
+        s.headers = vec![kv("Content-Type", "application/xml", true)];
+        let req = build(&s).unwrap();
+        let all: Vec<_> = req.headers().get_all("content-type").iter().collect();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0], "application/xml");
+    }
+
+    #[test]
+    fn empty_json_body_sends_no_body() {
+        let mut s = spec("https://api.dev");
+        s.method = "POST".into();
+        let req = build(&s).unwrap();
+        assert!(req.body().is_none());
+        assert!(req.headers().get("content-type").is_none());
+    }
+
+    #[test]
+    fn urlencoded_body_encodes_enabled_pairs() {
+        let mut s = spec("https://api.dev");
+        s.method = "POST".into();
+        s.body.mode = "form-urlencoded".into();
+        s.body.form = vec![
+            kv("a", "1", true),
+            kv("b", "x y", true),
+            kv("c", "no", false),
+        ];
+        let req = build(&s).unwrap();
+        assert_eq!(
+            req.headers().get("content-type").unwrap(),
+            "application/x-www-form-urlencoded"
+        );
+        let body = req.body().unwrap().as_bytes().unwrap();
+        assert_eq!(body, b"a=1&b=x+y");
+    }
+
+    #[test]
+    fn multipart_body_is_rejected() {
+        let mut s = spec("https://api.dev");
+        s.body.mode = "form-multipart".into();
+        let err = build(&s).unwrap_err();
+        assert!(err.contains("not supported yet"));
     }
 }

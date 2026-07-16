@@ -45,7 +45,32 @@ fn build_request(client: &reqwest::Client, spec: &SendSpec) -> Result<reqwest::R
         rb = rb.query(&query);
     }
 
-    rb.build().map_err(|e| e.to_string())
+    match &spec.auth {
+        AuthData::None => {}
+        AuthData::Basic { username, password } => {
+            rb = rb.basic_auth(username, Some(password));
+        }
+        AuthData::Bearer { token } => {
+            rb = rb.bearer_auth(token);
+        }
+        AuthData::Apikey { key, value, add_to } => {
+            if add_to == "query" {
+                rb = rb.query(&[(key.as_str(), value.as_str())]);
+            } else {
+                rb = rb.header(key, value);
+            }
+        }
+    }
+
+    let mut req = rb.build().map_err(|e| e.to_string())?;
+    for kv in enabled(&spec.headers) {
+        let name = reqwest::header::HeaderName::from_bytes(kv.key.as_bytes())
+            .map_err(|_| format!("invalid header name: {}", kv.key))?;
+        let value = reqwest::header::HeaderValue::from_str(&kv.value)
+            .map_err(|_| format!("invalid header value for: {}", kv.key))?;
+        req.headers_mut().insert(name, value);
+    }
+    Ok(req)
 }
 
 #[cfg(test)]
@@ -107,5 +132,85 @@ mod tests {
         let mut s = spec("https://api.dev");
         s.method = "DELETE".into();
         assert_eq!(build(&s).unwrap().method(), &reqwest::Method::DELETE);
+    }
+
+    #[test]
+    fn applies_basic_auth() {
+        let mut s = spec("https://api.dev");
+        s.auth = AuthData::Basic {
+            username: "ada".into(),
+            password: "pw".into(),
+        };
+        let req = build(&s).unwrap();
+        let v = req
+            .headers()
+            .get("authorization")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(v.starts_with("Basic "));
+    }
+
+    #[test]
+    fn applies_bearer_auth() {
+        let mut s = spec("https://api.dev");
+        s.auth = AuthData::Bearer {
+            token: "tok123".into(),
+        };
+        let req = build(&s).unwrap();
+        assert_eq!(req.headers().get("authorization").unwrap(), "Bearer tok123");
+    }
+
+    #[test]
+    fn applies_apikey_in_header() {
+        let mut s = spec("https://api.dev");
+        s.auth = AuthData::Apikey {
+            key: "X-Api-Key".into(),
+            value: "k1".into(),
+            add_to: "header".into(),
+        };
+        let req = build(&s).unwrap();
+        assert_eq!(req.headers().get("x-api-key").unwrap(), "k1");
+    }
+
+    #[test]
+    fn applies_apikey_in_query() {
+        let mut s = spec("https://api.dev/x");
+        s.auth = AuthData::Apikey {
+            key: "api_key".into(),
+            value: "k1".into(),
+            add_to: "query".into(),
+        };
+        let req = build(&s).unwrap();
+        assert_eq!(req.url().as_str(), "https://api.dev/x?api_key=k1");
+    }
+
+    #[test]
+    fn sets_enabled_headers_and_skips_disabled() {
+        let mut s = spec("https://api.dev");
+        s.headers = vec![kv("X-Trace", "1", true), kv("X-Off", "no", false)];
+        let req = build(&s).unwrap();
+        assert_eq!(req.headers().get("x-trace").unwrap(), "1");
+        assert!(req.headers().get("x-off").is_none());
+    }
+
+    #[test]
+    fn user_authorization_header_overrides_auth_config() {
+        let mut s = spec("https://api.dev");
+        s.auth = AuthData::Bearer {
+            token: "tok".into(),
+        };
+        s.headers = vec![kv("Authorization", "Custom abc", true)];
+        let req = build(&s).unwrap();
+        let all: Vec<_> = req.headers().get_all("authorization").iter().collect();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0], "Custom abc");
+    }
+
+    #[test]
+    fn rejects_invalid_header_name() {
+        let mut s = spec("https://api.dev");
+        s.headers = vec![kv("bad name", "v", true)];
+        assert!(build(&s).is_err());
     }
 }

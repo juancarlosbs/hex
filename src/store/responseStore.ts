@@ -60,8 +60,7 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
   clear(id) {
     set((s) => {
       const { [id]: _r, ...responses } = s.responses;
-      const { [id]: _q, ...seq } = s.seq;
-      return { responses, seq };
+      return { seq: { ...s.seq, [id]: (s.seq[id] ?? 0) + 1 }, responses };
     });
   },
 

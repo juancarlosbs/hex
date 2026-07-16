@@ -98,7 +98,22 @@ describe("clear", () => {
     await useResponseStore.getState().send(request());
     useResponseStore.getState().clear("r1");
     expect(useResponseStore.getState().responses.r1).toBeUndefined();
-    expect(useResponseStore.getState().seq.r1).toBeUndefined();
+    expect(typeof useResponseStore.getState().seq.r1).toBe("number");
+  });
+
+  it("bumps the counter to discard in-flight results after clear", async () => {
+    let resolveA!: (r: HttpResponse) => void;
+    vi.mocked(api.sendRequest)
+      .mockReturnValueOnce(new Promise((res) => { resolveA = res; }))
+      .mockResolvedValueOnce({ ...RESP, status: 201 });
+    const sendA = useResponseStore.getState().send(request());
+    useResponseStore.getState().clear("r1");
+    const sendB = useResponseStore.getState().send(request());
+    resolveA(RESP);
+    await sendA;
+    await sendB;
+    const entry = useResponseStore.getState().responses.r1;
+    expect(entry).toEqual({ state: "done", response: { ...RESP, status: 201 } });
   });
 
   it("clearAll empties the store", async () => {

@@ -1,42 +1,26 @@
 import { useState } from "react";
-import { HttpResponse, ResponseBodyView, ResponseTab } from "../../lib/response-types";
+import { Loader2, CircleAlert } from "lucide-react";
+import { ResponseBodyView as BodyViewKind, ResponseTab } from "../../lib/response-types";
 import { ResponsePlaceholder } from "./ResponsePlaceholder";
 import { ResponseStatusBar } from "./ResponseStatusBar";
 import { ResponseTabsStrip } from "./ResponseTabsStrip";
 import { ResponseFilterBar } from "./ResponseFilterBar";
 import { ResponseBodyView as BodyView } from "./body/ResponseBodyView";
-
-// ponytail: static fixture — replace with useResponseStore when wiring Tauri command
-const STATIC_FIXTURE: HttpResponse = {
-  status: 200,
-  statusText: "OK",
-  timeMs: 142,
-  sizeBytes: 2150,
-  headers: {
-    "content-type": "application/json; charset=utf-8",
-    "x-request-id": "req_31c9",
-  },
-  body: JSON.stringify(
-    {
-      data: {
-        user: { id: "usr_8f2a", email: "ada@acme.dev", role: "admin", active: true },
-        teams: ["core", "billing"],
-      },
-      meta: { requestId: "req_31c9", durationMs: 142 },
-    },
-    null,
-    2,
-  ),
-};
+import { useRequestStore } from "../../store/requestStore";
+import { useResponseStore } from "../../store/responseStore";
 
 export function ResponsePanel() {
-  // ponytail: swap useState(STATIC_FIXTURE) for useResponseStore(s => s.response) when ready
-  const [response] = useState<HttpResponse | null>(STATIC_FIXTURE);
+  const activeId = useRequestStore((s) => s.activeId);
+  const entry = useResponseStore((s) => (activeId ? s.responses[activeId] : undefined));
   const [activeTab, setActiveTab] = useState<ResponseTab>("body");
-  const [bodyView, setBodyView] = useState<ResponseBodyView>("tree");
+  const [bodyView, setBodyView] = useState<BodyViewKind>("tree");
   const [filter, setFilter] = useState("");
 
-  if (!response) return <ResponsePlaceholder />;
+  if (!entry) return <ResponsePlaceholder />;
+  if (entry.state === "loading") return <LoadingView />;
+  if (entry.state === "error") return <ErrorView message={entry.error} />;
+
+  const response = entry.response;
 
   return (
     <aside className="flex flex-col h-full bg-card border-l border-border">
@@ -57,6 +41,32 @@ export function ResponsePanel() {
       )}
       {activeTab === "headers" && <HeadersView headers={response.headers} />}
       {activeTab === "timing" && <TimingStub />}
+    </aside>
+  );
+}
+
+function LoadingView() {
+  return (
+    <aside className="flex flex-col h-full bg-card border-l border-border">
+      <div className="flex flex-col items-center justify-center gap-3 flex-1 text-muted">
+        <Loader2 size={28} className="animate-spin opacity-50" />
+        <span className="text-[13px]" style={{ fontFamily: "var(--font-sans)" }}>
+          Sending…
+        </span>
+      </div>
+    </aside>
+  );
+}
+
+function ErrorView({ message }: { message: string }) {
+  return (
+    <aside className="flex flex-col h-full bg-card border-l border-border">
+      <div className="flex flex-col items-center justify-center gap-3 flex-1 px-6 text-center">
+        <CircleAlert size={28} className="text-status-5xx opacity-80" />
+        <span className="text-[13px] text-status-5xx" style={{ fontFamily: "var(--font-mono)" }}>
+          {message}
+        </span>
+      </div>
     </aside>
   );
 }
@@ -88,7 +98,7 @@ function HeadersView({ headers }: { headers: Record<string, string> }) {
 function TimingStub() {
   return (
     <div className="flex-1 flex items-center justify-center text-muted text-[13px]" style={{ fontFamily: "var(--font-sans)" }}>
-      Timing waterfall — coming soon.
+      Total time only for now — per-phase waterfall coming with the instrumented engine.
     </div>
   );
 }

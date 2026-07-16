@@ -4,6 +4,7 @@ vi.mock("../lib/api", () => ({
   api: {
     getRequest: vi.fn(),
     updateRequest: vi.fn().mockResolvedValue(undefined),
+    sendRequest: vi.fn(),
   },
 }));
 vi.mock("./workspaceStore", () => ({
@@ -14,6 +15,7 @@ vi.mock("./collectionStore", () => ({
 }));
 
 import { useRequestStore } from "./requestStore";
+import { useResponseStore } from "./responseStore";
 import { makeEmptyRequest } from "../lib/request-types";
 import { api } from "../lib/api";
 
@@ -96,5 +98,25 @@ describe("dirty tracking", () => {
     const s = useRequestStore.getState();
     expect(s.order.filter((x) => x === "r2")).toHaveLength(1);
     expect(s.openRequests.r2).toBeDefined();
+  });
+});
+
+describe("response cleanup", () => {
+  it("closing a request clears its response entry", () => {
+    useResponseStore.setState({
+      responses: { r1: { state: "error", error: "x" } },
+      seq: { r1: 1 },
+    });
+    useRequestStore.getState().closeRequest("r1");
+    expect(useResponseStore.getState().responses.r1).toBeUndefined();
+  });
+
+  it("closeAll clears all response entries", () => {
+    useResponseStore.setState({
+      responses: { r1: { state: "error", error: "x" } },
+      seq: { r1: 1 },
+    });
+    useRequestStore.getState().closeAll();
+    expect(useResponseStore.getState().responses).toEqual({});
   });
 });

@@ -157,6 +157,7 @@ Error paths (all with dedicated UI):
   · timeout → same
   · SOAP Fault (HTTP 200 + soap:Fault in body) → render as structured ERROR, not success
 ```
+Current engine: reqwest shortcut (ADR-005) — total time only; per-phase waterfall and phase-attributed errors land with the instrumented engine.
 
 ### F4 — Switch environment 🟢
 Switcher in titlebar → re-interpolation of all `{{var}}` in the visible request.

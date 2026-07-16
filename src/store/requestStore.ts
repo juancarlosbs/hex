@@ -241,7 +241,11 @@ function fromFile(data: RequestFileData, path: string[]): OpenRequest {
     activeTab: "params",
     params: data.params ?? [],
     headers: data.headers ?? [],
-    body: data.body ?? { mode: "json", json: "", form: [] },
+    // the wire shape omits empty `form` (serde skip_serializing_if) — normalize it
+    // here so store consumers never see body.form === undefined
+    body: data.body
+      ? { ...data.body, form: data.body.form ?? [] }
+      : { mode: "json", json: "", form: [] },
     auth: data.auth ?? { type: "none" },
     path,
     dirty: false,

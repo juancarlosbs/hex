@@ -16,7 +16,7 @@ vi.mock("./collectionStore", () => ({
 
 import { useRequestStore } from "./requestStore";
 import { useResponseStore } from "./responseStore";
-import { makeEmptyRequest } from "../lib/request-types";
+import { RestBody, makeEmptyRequest } from "../lib/request-types";
 import { api } from "../lib/api";
 
 beforeEach(() => {
@@ -81,6 +81,21 @@ describe("dirty tracking", () => {
     expect(s.openRequests.rB).toBeDefined();
     expect(s.order).toEqual(["rB"]);
     expect(s.activeId).toBe("rB");
+  });
+
+  it("normalizes a loaded body without form to an empty array", async () => {
+    // the Rust side omits `form` when empty (skip_serializing_if), so the wire
+    // shape of a saved json body has no form key at all
+    vi.mocked(api.getRequest).mockResolvedValue({
+      id: "r2",
+      name: "teste",
+      kind: "rest",
+      method: "POST",
+      url: "https://api.dev",
+      body: { mode: "json", json: "{}" } as RestBody,
+    });
+    await useRequestStore.getState().openRequest("r2", "teste", ["c1", "r2"]);
+    expect(useRequestStore.getState().openRequests.r2.body.form).toEqual([]);
   });
 
   it("concurrent openRequest calls for the same id do not duplicate the tab", async () => {

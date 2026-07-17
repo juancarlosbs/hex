@@ -5,6 +5,7 @@ use std::future::Future;
 const XSD_NS: &str = "http://www.w3.org/2001/XMLSchema";
 
 #[derive(Debug)]
+#[allow(dead_code)] // fields consumed by slice 2 (xsd -> SchemaNode)
 pub struct ResolvedDoc {
     pub url: String,
     pub xml: String,
@@ -12,6 +13,7 @@ pub struct ResolvedDoc {
 
 /// All fetched documents (root WSDL first). Slice 2 parses schemas out of these.
 #[derive(Debug)]
+#[allow(dead_code)] // consumed by slice 2 (xsd -> SchemaNode); import_wsdl only validates
 pub struct SchemaSet {
     pub docs: Vec<ResolvedDoc>,
 }

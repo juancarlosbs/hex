@@ -1,9 +1,7 @@
 mod commands;
-#[allow(dead_code)] // used from Task 4 (commands)
 mod domain;
 mod engine;
 mod persistence;
-#[allow(dead_code)] // used from Task 4 (commands)
 mod wsdl;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -22,6 +20,8 @@ pub fn run() {
             commands::get_request,
             commands::update_request,
             commands::send_request,
+            commands::import_wsdl,
+            commands::confirm_wsdl_import,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { KeyValue, RestBody, AuthConfig } from "./request-types";
+import { HttpResponse } from "./response-types";
 
 export type RequestKind =
   | { kind: "rest"; method: string; url: string }
@@ -11,6 +12,15 @@ export type CollectionNode =
 
 export interface RequestContent {
   kind: "rest";
+  method: string;
+  url: string;
+  params: KeyValue[];
+  headers: KeyValue[];
+  body: RestBody;
+  auth: AuthConfig;
+}
+
+export interface SendSpec {
   method: string;
   url: string;
   params: KeyValue[];
@@ -58,4 +68,7 @@ export const api = {
 
   updateRequest: (workspaceId: string, path: string[], content: RequestContent) =>
     invoke<void>("update_request", { workspaceId, path, content }),
+
+  sendRequest: (spec: SendSpec) =>
+    invoke<HttpResponse>("send_request", { spec }),
 };

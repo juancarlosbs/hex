@@ -4,6 +4,7 @@ vi.mock("../lib/api", () => ({
   api: {
     getRequest: vi.fn(),
     updateRequest: vi.fn().mockResolvedValue(undefined),
+    sendRequest: vi.fn(),
   },
 }));
 vi.mock("./workspaceStore", () => ({
@@ -14,7 +15,8 @@ vi.mock("./collectionStore", () => ({
 }));
 
 import { useRequestStore } from "./requestStore";
-import { makeEmptyRequest } from "../lib/request-types";
+import { useResponseStore } from "./responseStore";
+import { RestBody, makeEmptyRequest } from "../lib/request-types";
 import { api } from "../lib/api";
 
 beforeEach(() => {
@@ -81,6 +83,21 @@ describe("dirty tracking", () => {
     expect(s.activeId).toBe("rB");
   });
 
+  it("normalizes a loaded body without form to an empty array", async () => {
+    // the Rust side omits `form` when empty (skip_serializing_if), so the wire
+    // shape of a saved json body has no form key at all
+    vi.mocked(api.getRequest).mockResolvedValue({
+      id: "r2",
+      name: "teste",
+      kind: "rest",
+      method: "POST",
+      url: "https://api.dev",
+      body: { mode: "json", json: "{}" } as RestBody,
+    });
+    await useRequestStore.getState().openRequest("r2", "teste", ["c1", "r2"]);
+    expect(useRequestStore.getState().openRequests.r2.body.form).toEqual([]);
+  });
+
   it("concurrent openRequest calls for the same id do not duplicate the tab", async () => {
     vi.mocked(api.getRequest).mockResolvedValue({
       id: "r2",
@@ -96,5 +113,25 @@ describe("dirty tracking", () => {
     const s = useRequestStore.getState();
     expect(s.order.filter((x) => x === "r2")).toHaveLength(1);
     expect(s.openRequests.r2).toBeDefined();
+  });
+});
+
+describe("response cleanup", () => {
+  it("closing a request clears its response entry", () => {
+    useResponseStore.setState({
+      responses: { r1: { state: "error", error: "x" } },
+      seq: { r1: 1 },
+    });
+    useRequestStore.getState().closeRequest("r1");
+    expect(useResponseStore.getState().responses.r1).toBeUndefined();
+  });
+
+  it("closeAll clears all response entries", () => {
+    useResponseStore.setState({
+      responses: { r1: { state: "error", error: "x" } },
+      seq: { r1: 1 },
+    });
+    useRequestStore.getState().closeAll();
+    expect(useResponseStore.getState().responses).toEqual({});
   });
 });

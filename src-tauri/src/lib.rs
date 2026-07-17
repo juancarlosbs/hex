@@ -1,4 +1,5 @@
 mod commands;
+mod engine;
 mod persistence;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -16,6 +17,7 @@ pub fn run() {
             commands::reorder_children,
             commands::get_request,
             commands::update_request,
+            commands::send_request,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

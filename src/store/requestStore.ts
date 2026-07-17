@@ -13,6 +13,7 @@ import {
 import { api, RequestFileData } from "../lib/api";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useCollectionStore } from "./collectionStore";
+import { useResponseStore } from "./responseStore";
 
 interface RequestState {
   openRequests: Record<string, OpenRequest>;
@@ -107,15 +108,18 @@ export const useRequestStore = create<RequestState>((set, get) => ({
       const activeId = s.activeId === id ? (order[order.length - 1] ?? null) : s.activeId;
       return { openRequests: rest, order, activeId };
     });
+    useResponseStore.getState().clear(id);
   },
 
   closeRequestsUnder(prefix) {
+    const isUnder = (path: string[]) =>
+      path.length >= prefix.length && prefix.every((v, i) => path[i] === v);
+    const removedIds = Object.keys(get().openRequests).filter((id) =>
+      isUnder(get().openRequests[id].path)
+    );
+    if (removedIds.length === 0) return;
+    const removed = new Set(removedIds);
     set((s) => {
-      const isUnder = (path: string[]) =>
-        path.length >= prefix.length && prefix.every((v, i) => path[i] === v);
-      const removedIds = Object.keys(s.openRequests).filter((id) => isUnder(s.openRequests[id].path));
-      if (removedIds.length === 0) return s;
-      const removed = new Set(removedIds);
       const openRequests = Object.fromEntries(
         Object.entries(s.openRequests).filter(([id]) => !removed.has(id))
       );
@@ -123,10 +127,12 @@ export const useRequestStore = create<RequestState>((set, get) => ({
       const activeId = s.activeId && removed.has(s.activeId) ? (order[order.length - 1] ?? null) : s.activeId;
       return { openRequests, order, activeId };
     });
+    removedIds.forEach((rid) => useResponseStore.getState().clear(rid));
   },
 
   closeAll() {
     set({ openRequests: {}, order: [], activeId: null });
+    useResponseStore.getState().clearAll();
   },
 
   setActive(id) { set({ activeId: id }); },
@@ -235,7 +241,11 @@ function fromFile(data: RequestFileData, path: string[]): OpenRequest {
     activeTab: "params",
     params: data.params ?? [],
     headers: data.headers ?? [],
-    body: data.body ?? { mode: "json", json: "", form: [] },
+    // the wire shape omits empty `form` (serde skip_serializing_if) — normalize it
+    // here so store consumers never see body.form === undefined
+    body: data.body
+      ? { ...data.body, form: data.body.form ?? [] }
+      : { mode: "json", json: "", form: [] },
     auth: data.auth ?? { type: "none" },
     path,
     dirty: false,

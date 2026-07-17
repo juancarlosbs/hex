@@ -3,6 +3,9 @@
 export const HTTP_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"] as const;
 export type HttpMethod = (typeof HTTP_METHODS)[number];
 
+/** GET/HEAD must not carry a body (spec-level rule enforced in the UI and on send) */
+export const methodAllowsBody = (m: HttpMethod) => m !== "GET" && m !== "HEAD";
+
 export const METHOD_COLOR: Record<HttpMethod, string> = {
   GET: "text-method-get",
   POST: "text-method-post",

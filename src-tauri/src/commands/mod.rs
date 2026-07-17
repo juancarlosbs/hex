@@ -101,3 +101,10 @@ pub fn update_request(
     let dir = data_dir(&app)?;
     collection::update_request(&dir, &workspace_id, path, content).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub async fn send_request(
+    spec: crate::engine::SendSpec,
+) -> Result<crate::engine::HttpResponse, String> {
+    crate::engine::send(spec).await
+}

@@ -75,6 +75,18 @@ describe("send", () => {
     const entry = useResponseStore.getState().responses.r1;
     expect(entry).toEqual({ state: "done", response: { ...RESP, status: 201 } });
   });
+
+  it("strips the body for GET/HEAD methods", async () => {
+    vi.mocked(api.sendRequest).mockResolvedValue(RESP);
+    const req = request(); // method: "GET"
+    req.body = { mode: "json", json: '{"a":1}', form: [] };
+    await useResponseStore.getState().send(req);
+    expect(api.sendRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ body: { mode: "json", json: "", form: [] } })
+    );
+    // store body untouched
+    expect(req.body.json).toBe('{"a":1}');
+  });
 });
 
 describe("cancel", () => {

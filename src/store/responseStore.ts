@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { HttpResponse } from "../lib/response-types";
-import { OpenRequest } from "../lib/request-types";
+import { OpenRequest, methodAllowsBody } from "../lib/request-types";
 import { api } from "../lib/api";
 
 export type ResponseEntry =
@@ -38,7 +38,9 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
         url: request.url,
         params: request.params,
         headers: request.headers,
-        body: request.body,
+        body: methodAllowsBody(request.method)
+          ? request.body
+          : { mode: "json", json: "", form: [] },
         auth: request.auth,
       });
       entry = { state: "done", response };

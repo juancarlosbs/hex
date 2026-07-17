@@ -1,6 +1,10 @@
 mod commands;
+#[allow(dead_code)] // used from Task 4 (commands)
+mod domain;
 mod engine;
 mod persistence;
+#[allow(dead_code)] // used from Task 4 (commands)
+mod wsdl;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

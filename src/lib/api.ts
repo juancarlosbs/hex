@@ -2,9 +2,22 @@ import { invoke } from "@tauri-apps/api/core";
 import { KeyValue, RestBody, AuthConfig } from "./request-types";
 import { HttpResponse } from "./response-types";
 
+export interface WsdlQName {
+  namespace: string;
+  local: string;
+}
+
 export type RequestKind =
   | { kind: "rest"; method: string; url: string }
-  | { kind: "soap"; wsdlUrl: string; operation: string };
+  | {
+      kind: "soap";
+      wsdlUrl: string;
+      operation: string;
+      endpoint?: string;
+      soapAction?: string;
+      soapVersion?: "1.1" | "1.2";
+      inputElement?: WsdlQName;
+    };
 
 export type CollectionNode =
   | { type: "folder"; id: string; name: string; children: CollectionNode[] }

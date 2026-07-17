@@ -82,7 +82,9 @@ soap_version, input_element: QName }`, `SoapVersion { V11, V12 }`, `QName`.
   `schemaLocation` resolved against the current document URL. Fetch injected as a
   small trait/closure so tests run without network; production impl uses reqwest.
 - `error.rs` — `WsdlError { Fetch { url }, InvalidXml { url }, UnsupportedStyle,
-  ElementNotFound { qname }, MissingSchemaLocation }` with `thiserror`.
+  ElementNotFound { qname } }` with `thiserror`. An `xsd:import` without
+  `schemaLocation` is skipped, not an error (legal and common — the namespace may
+  already be known).
 
 ### Commands (thin)
 
@@ -104,7 +106,7 @@ soap_version, input_element: QName }`, `SoapVersion { V11, V12 }`, `QName`.
 ## Error handling
 
 Per F2: any failure (root fetch, external schema 404/timeout, invalid XML,
-rpc/encoded, missing schemaLocation) aborts the whole import and renders in the modal
+rpc/encoded) aborts the whole import and renders in the modal
 with the offending URL/cause. No partial imports.
 
 ## Testing

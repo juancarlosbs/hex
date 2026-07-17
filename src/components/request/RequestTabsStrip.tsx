@@ -1,5 +1,5 @@
 // src/components/request/RequestTabsStrip.tsx
-import { RequestTab } from "../../lib/request-types";
+import { RequestTab, methodAllowsBody } from "../../lib/request-types";
 import { useRequestStore } from "../../store/requestStore";
 
 const TABS: { key: RequestTab; label: string }[] = [
@@ -17,6 +17,7 @@ export function RequestTabsStrip({ requestId }: RequestTabsStripProps) {
   const active = useRequestStore((s) => s.openRequests[requestId]?.activeTab);
   const params = useRequestStore((s) => s.openRequests[requestId]?.params.length ?? 0);
   const headers = useRequestStore((s) => s.openRequests[requestId]?.headers.length ?? 0);
+  const method = useRequestStore((s) => s.openRequests[requestId]?.method ?? "GET");
   const setActiveTab = useRequestStore((s) => s.setActiveTab);
 
   const count = (k: RequestTab) => (k === "params" ? params : k === "headers" ? headers : 0);
@@ -24,14 +25,21 @@ export function RequestTabsStrip({ requestId }: RequestTabsStripProps) {
   return (
     <div className="flex items-center gap-4 px-3 border-b border-border">
       {TABS.map((t) => {
-        const isActive = active === t.key;
+        const disabled = t.key === "body" && !methodAllowsBody(method);
+        const isActive = active === t.key && !disabled;
         return (
           <button
             key={t.key}
             type="button"
+            disabled={disabled}
+            title={disabled ? "GET/HEAD requests don't use a body" : undefined}
             onClick={() => setActiveTab(requestId, t.key)}
-            className={`flex items-center gap-[6px] py-3 border-b-2 cursor-pointer ${
-              isActive ? "border-primary text-foreground" : "border-transparent text-muted hover:text-foreground"
+            className={`flex items-center gap-[6px] py-3 border-b-2 ${
+              disabled
+                ? "border-transparent text-muted/40 cursor-not-allowed"
+                : isActive
+                  ? "border-primary text-foreground cursor-pointer"
+                  : "border-transparent text-muted hover:text-foreground cursor-pointer"
             }`}
             style={{ fontFamily: "var(--font-sans)" }}
           >

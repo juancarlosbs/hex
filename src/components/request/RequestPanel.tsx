@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useRequestStore } from "../../store/requestStore";
+import { methodAllowsBody } from "../../lib/request-types";
 import { UrlBar } from "./UrlBar";
 import { RequestTabsStrip } from "./RequestTabsStrip";
 import { ParamsTab } from "./ParamsTab";
@@ -11,6 +12,7 @@ import { RequestEmpty } from "./RequestEmpty";
 export function RequestPanel() {
   const activeId = useRequestStore((s) => s.activeId);
   const activeTab = useRequestStore((s) => (activeId ? s.openRequests[activeId]?.activeTab : null));
+  const method = useRequestStore((s) => (activeId ? s.openRequests[activeId]?.method : undefined));
   const saveRequest = useRequestStore((s) => s.saveRequest);
 
   useEffect(() => {
@@ -33,8 +35,13 @@ export function RequestPanel() {
       </div>
       <RequestTabsStrip requestId={activeId} />
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {activeTab === "params" && <ParamsTab requestId={activeId} />}
-        {activeTab === "body" && <BodyTab requestId={activeId} />}
+        {(activeTab === "params" ||
+          (activeTab === "body" && method !== undefined && !methodAllowsBody(method))) && (
+          <ParamsTab requestId={activeId} />
+        )}
+        {activeTab === "body" && method !== undefined && methodAllowsBody(method) && (
+          <BodyTab requestId={activeId} />
+        )}
         {activeTab === "headers" && <HeadersTab requestId={activeId} />}
         {activeTab === "auth" && <AuthTab requestId={activeId} />}
       </div>

@@ -85,7 +85,7 @@ Implementation order: see `docs/architecture.md` (milestones).
 | Feature | Priority |
 |---|---|
 | XML/JSON tree with **copy-leaf ⧉** (value without key) | 🟢⭐ |
-| Per-phase timing waterfall | 🟢⭐ |
+| Per-phase timing waterfall | 🔵⭐ *(next phase — instrumented engine; MVP shows total time only, ADR-005)* |
 | **SOAP Fault rendered as error** (even with HTTP 200) **[S]** | 🟢 |
 | Status/time/size always visible; color by status range | 🟢 |
 | Tree ⇄ Raw toggle (with pretty-print) | 🟢 |

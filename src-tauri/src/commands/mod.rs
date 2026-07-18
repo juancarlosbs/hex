@@ -193,3 +193,39 @@ pub fn confirm_wsdl_import(
     }
     Ok(())
 }
+
+use crate::domain::schema::SchemaNode;
+use crate::domain::wsdl::QName;
+
+#[tauri::command]
+pub async fn get_operation_schema(
+    wsdl_url: String,
+    input_element: QName,
+) -> Result<SchemaNode, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let fetch = |u: String| {
+        let client = client.clone();
+        async move {
+            let resp = client.get(&u).send().await.map_err(|e| e.to_string())?;
+            if !resp.status().is_success() {
+                return Err(format!("HTTP {}", resp.status()));
+            }
+            resp.text().await.map_err(|e| e.to_string())
+        }
+    };
+
+    let root_xml = fetch(wsdl_url.clone()).await.map_err(|message| {
+        wsdl::error::WsdlError::Fetch {
+            url: wsdl_url.clone(),
+            message,
+        }
+        .to_string()
+    })?;
+    let set = wsdl::resolve::resolve(&wsdl_url, &root_xml, fetch)
+        .await
+        .map_err(|e| e.to_string())?;
+    wsdl::xsd::build_schema(&set, &input_element).map_err(|e| e.to_string())
+}

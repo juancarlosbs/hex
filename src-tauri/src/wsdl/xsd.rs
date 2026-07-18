@@ -1,4 +1,4 @@
-use crate::domain::schema::{MaxOccurs, NodeKind, Occurs, SchemaNode, XsdType};
+use crate::domain::schema::{Attribute, MaxOccurs, NodeKind, Occurs, SchemaNode, XsdType};
 use crate::domain::wsdl::QName;
 use crate::wsdl::error::WsdlError;
 use crate::wsdl::resolve::{ResolvedDoc, SchemaSet};
@@ -85,31 +85,34 @@ impl<'a> Index<'a> {
         let nillable = el.attribute("nillable") == Some("true");
         let doc = read_doc(el);
 
-        // Resolve the element's type node: inline complexType/simpleType, or el.type QName.
         let type_node = el
             .children()
             .find(|c| c.has_tag_name((XSD_NS, "complexType")) || c.has_tag_name((XSD_NS, "simpleType")));
 
-        let kind = match type_node {
+        let (kind, attributes) = match type_node {
             Some(t) if t.has_tag_name((XSD_NS, "complexType")) => {
-                self.walk_complex(t, path_types, depth)?
+                (self.walk_complex(t, path_types, depth)?, collect_attributes(t))
             }
-            Some(t) => leaf_from_simple_type(t, el),
-            None => {
-                // named type reference via @type
-                match el.attribute("type") {
-                    Some(type_ref) => {
-                        let tq = resolve_ref(el, type_ref);
-                        self.walk_named_type(&tq, el, path_types, depth)?
-                    }
-                    None => NodeKind::Leaf {
+            Some(t) => (leaf_from_simple_type(t, el), vec![]),
+            None => match el.attribute("type") {
+                Some(type_ref) => {
+                    let tq = resolve_ref(el, type_ref);
+                    let attrs = self
+                        .named_type(&tq)
+                        .map(collect_attributes)
+                        .unwrap_or_default();
+                    (self.walk_named_type(&tq, el, path_types, depth)?, attrs)
+                }
+                None => (
+                    NodeKind::Leaf {
                         xsd_type: XsdType::String,
                         enum_values: vec![],
                         default: el.attribute("default").map(str::to_string),
                         fixed: el.attribute("fixed").map(str::to_string),
                     },
-                }
-            }
+                    vec![],
+                ),
+            },
         };
 
         Ok(SchemaNode {
@@ -118,7 +121,7 @@ impl<'a> Index<'a> {
             occurs,
             nillable,
             doc,
-            attributes: vec![],
+            attributes,
             kind,
         })
     }
@@ -217,14 +220,47 @@ fn leaf_from_builtin(tq: &QName, el: Node) -> NodeKind {
     }
 }
 
-fn leaf_from_simple_type(_t: Node, el: Node) -> NodeKind {
-    // Enum facets handled in a later task; base type mapping is enough here.
+fn leaf_from_simple_type(t: Node, el: Node) -> NodeKind {
+    let restriction = t.children().find(|c| c.has_tag_name((XSD_NS, "restriction")));
+    let base_local = restriction
+        .and_then(|r| r.attribute("base"))
+        .map(|b| b.rsplit(':').next().unwrap_or(b).to_string())
+        .unwrap_or_else(|| "string".into());
+    let enum_values = restriction
+        .map(|r| {
+            r.children()
+                .filter(|c| c.has_tag_name((XSD_NS, "enumeration")))
+                .filter_map(|e| e.attribute("value").map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
     NodeKind::Leaf {
-        xsd_type: XsdType::String,
-        enum_values: vec![],
+        xsd_type: map_xsd_type(&base_local),
+        enum_values,
         default: el.attribute("default").map(str::to_string),
         fixed: el.attribute("fixed").map(str::to_string),
     }
+}
+
+fn collect_attributes(container: Node) -> Vec<Attribute> {
+    container
+        .children()
+        .filter(|c| c.has_tag_name((XSD_NS, "attribute")))
+        .filter_map(|a| {
+            let name = a.attribute("name")?.to_string();
+            let type_local = a
+                .attribute("type")
+                .map(|t| t.rsplit(':').next().unwrap_or(t))
+                .unwrap_or("string");
+            Some(Attribute {
+                name,
+                xsd_type: map_xsd_type(type_local),
+                required: a.attribute("use") == Some("required"),
+                enum_values: vec![],
+                default: a.attribute("default").map(str::to_string),
+            })
+        })
+        .collect()
 }
 
 fn recursive_placeholder() -> NodeKind {
@@ -273,5 +309,32 @@ mod tests {
         let set = set_from(include_str!("testdata/calculator.wsdl"));
         let root = QName { namespace: "http://example.com/calc".into(), local: "Nope".into() };
         assert!(matches!(build_schema(&set, &root), Err(WsdlError::ElementNotFound { .. })));
+    }
+
+    #[test]
+    fn fields_enum_occurs_nillable_default_attributes() {
+        let set = set_from(include_str!("testdata/fields.xsd"));
+        let root = QName { namespace: "http://ex/fields".into(), local: "Order".into() };
+        let node = build_schema(&set, &root).unwrap();
+        let NodeKind::Sequence(children) = &node.kind else { panic!() };
+
+        let status = &children[0];
+        let NodeKind::Leaf { enum_values, .. } = &status.kind else { panic!() };
+        assert_eq!(enum_values, &vec!["NEW".to_string(), "PAID".to_string()]);
+
+        let note = &children[1];
+        assert!(note.occurs.optional());
+        assert!(note.nillable);
+
+        let qty = &children[2];
+        assert!(qty.occurs.repeatable());
+
+        let channel = &children[3];
+        let NodeKind::Leaf { default, .. } = &channel.kind else { panic!() };
+        assert_eq!(default.as_deref(), Some("web"));
+
+        assert_eq!(node.attributes.len(), 1);
+        assert_eq!(node.attributes[0].name, "id");
+        assert!(node.attributes[0].required);
     }
 }

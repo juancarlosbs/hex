@@ -1,11 +1,13 @@
-import { useRef } from "react";
-import { FolderPlus, Plus, RefreshCw, Search } from "lucide-react";
+import { useRef, useState } from "react";
+import { FolderPlus, Globe, Plus, RefreshCw, Search } from "lucide-react";
 import { CollectionTree, CollectionTreeHandle } from "./CollectionTree";
+import { ImportWsdlModal } from "./ImportWsdlModal";
 import { useWorkspaceStore } from "../store/workspaceStore";
 
 export function Sidebar() {
   const workspaceId = useWorkspaceStore((s) => s.activeId);
   const treeRef = useRef<CollectionTreeHandle>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   return (
     <aside
@@ -31,6 +33,14 @@ export function Sidebar() {
             className="text-sidebar-muted cursor-pointer hover:text-foreground"
             onClick={() => treeRef.current?.startCreateRequest()}
           />
+          <Globe
+            size={14}
+            className="text-sidebar-muted cursor-pointer hover:text-foreground"
+            aria-label="Import WSDL"
+            onClick={() => setImportOpen(true)}
+          >
+            <title>Import WSDL</title>
+          </Globe>
         </div>
       </div>
 
@@ -54,6 +64,8 @@ export function Sidebar() {
           Update Definition
         </span>
       </div>
+
+      <ImportWsdlModal open={importOpen} onClose={() => setImportOpen(false)} />
     </aside>
   );
 }

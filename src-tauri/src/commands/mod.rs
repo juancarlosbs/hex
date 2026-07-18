@@ -108,3 +108,88 @@ pub async fn send_request(
 ) -> Result<crate::engine::HttpResponse, String> {
     crate::engine::send(spec).await
 }
+
+use crate::domain::wsdl::{OperationRef, SoapVersion};
+use crate::wsdl;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsdlImportPreview {
+    pub service_name: String,
+    pub wsdl_url: String,
+    pub operations: Vec<OperationRef>,
+}
+
+#[tauri::command]
+pub async fn import_wsdl(url: String) -> Result<WsdlImportPreview, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let fetch = |u: String| {
+        let client = client.clone();
+        async move {
+            let resp = client.get(&u).send().await.map_err(|e| e.to_string())?;
+            if !resp.status().is_success() {
+                return Err(format!("HTTP {}", resp.status()));
+            }
+            resp.text().await.map_err(|e| e.to_string())
+        }
+    };
+
+    let xml = fetch(url.clone()).await.map_err(|message| {
+        wsdl::error::WsdlError::Fetch {
+            url: url.clone(),
+            message,
+        }
+        .to_string()
+    })?;
+    let parsed = wsdl::parse::parse(&url, &xml).map_err(|e| e.to_string())?;
+    // SchemaSet discarded in slice 1: resolve runs to validate the full schema
+    // closure up front; slice 2 (xsd -> SchemaNode) consumes it.
+    wsdl::resolve::resolve(&url, &xml, fetch)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(WsdlImportPreview {
+        service_name: parsed.service_name,
+        wsdl_url: url,
+        operations: parsed.operations,
+    })
+}
+
+#[tauri::command]
+pub fn confirm_wsdl_import(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    preview: WsdlImportPreview,
+) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    let col = collection::create_collection(&dir, &workspace_id, &preview.service_name)
+        .map_err(|e| e.to_string())?;
+    let CollectionNode::Folder { id, .. } = &col else {
+        return Err("created collection is not a folder".into());
+    };
+    for op in &preview.operations {
+        let version = match op.soap_version {
+            SoapVersion::V11 => "1.1",
+            SoapVersion::V12 => "1.2",
+        };
+        collection::create_request(
+            &dir,
+            &workspace_id,
+            vec![id.clone()],
+            &op.name,
+            RequestKind::Soap {
+                wsdl_url: preview.wsdl_url.clone(),
+                operation: op.name.clone(),
+                endpoint: Some(op.endpoint.clone()),
+                soap_action: Some(op.soap_action.clone()),
+                soap_version: Some(version.to_string()),
+                input_element: Some(op.input_element.clone()),
+            },
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}

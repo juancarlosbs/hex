@@ -2,9 +2,22 @@ import { invoke } from "@tauri-apps/api/core";
 import { KeyValue, RestBody, AuthConfig } from "./request-types";
 import { HttpResponse } from "./response-types";
 
+export interface WsdlQName {
+  namespace: string;
+  local: string;
+}
+
 export type RequestKind =
   | { kind: "rest"; method: string; url: string }
-  | { kind: "soap"; wsdlUrl: string; operation: string };
+  | {
+      kind: "soap";
+      wsdlUrl: string;
+      operation: string;
+      endpoint?: string;
+      soapAction?: string;
+      soapVersion?: "1.1" | "1.2";
+      inputElement?: WsdlQName;
+    };
 
 export type CollectionNode =
   | { type: "folder"; id: string; name: string; children: CollectionNode[] }
@@ -41,6 +54,20 @@ export interface RequestFileData {
   auth?: AuthConfig;
 }
 
+export interface WsdlOperation {
+  name: string;
+  endpoint: string;
+  soapAction: string;
+  soapVersion: "1.1" | "1.2";
+  inputElement: WsdlQName;
+}
+
+export interface WsdlImportPreview {
+  serviceName: string;
+  wsdlUrl: string;
+  operations: WsdlOperation[];
+}
+
 export const api = {
   listCollections: (workspaceId: string) =>
     invoke<CollectionNode[]>("list_collections", { workspaceId }),
@@ -71,4 +98,10 @@ export const api = {
 
   sendRequest: (spec: SendSpec) =>
     invoke<HttpResponse>("send_request", { spec }),
+
+  importWsdl: (url: string) =>
+    invoke<WsdlImportPreview>("import_wsdl", { url }),
+
+  confirmWsdlImport: (workspaceId: string, preview: WsdlImportPreview) =>
+    invoke<void>("confirm_wsdl_import", { workspaceId, preview }),
 };

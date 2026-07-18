@@ -22,8 +22,23 @@ pub enum CollectionNode {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum RequestKind {
-    Rest { method: String, url: String },
-    Soap { wsdl_url: String, operation: String },
+    Rest {
+        method: String,
+        url: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    Soap {
+        wsdl_url: String,
+        operation: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        endpoint: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        soap_action: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        soap_version: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        input_element: Option<crate::domain::wsdl::QName>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -691,5 +706,52 @@ mod tests {
         assert!(rf.body.is_none());
         assert!(rf.auth.is_none());
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn soap_request_roundtrips_metadata_and_old_files_still_load() {
+        let dir = tmp("soap-roundtrip");
+        create_collection(&dir, "w1", "Calc").unwrap();
+        let col_id = match &list_collections(&dir, "w1").unwrap()[0] {
+            CollectionNode::Folder { id, .. } => id.clone(),
+            _ => panic!("expected folder"),
+        };
+        let kind = RequestKind::Soap {
+            wsdl_url: "http://x/svc?wsdl".into(),
+            operation: "Add".into(),
+            endpoint: Some("http://x/svc".into()),
+            soap_action: Some("http://x/Add".into()),
+            soap_version: Some("1.1".into()),
+            input_element: Some(crate::domain::wsdl::QName {
+                namespace: "http://x/ns".into(),
+                local: "Add".into(),
+            }),
+        };
+        let node = create_request(&dir, "w1", vec![col_id.clone()], "Add", kind).unwrap();
+        let CollectionNode::Request { id, .. } = &node else {
+            panic!("expected request")
+        };
+        let rf = get_request(&dir, "w1", vec![col_id, id.clone()]).unwrap();
+        match rf.kind {
+            RequestKind::Soap {
+                soap_version,
+                input_element,
+                ..
+            } => {
+                assert_eq!(soap_version.as_deref(), Some("1.1"));
+                assert_eq!(input_element.unwrap().local, "Add");
+            }
+            _ => panic!("expected soap"),
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn soap_file_without_metadata_still_deserializes() {
+        // pre-slice-1 file shape: only wsdlUrl + operation
+        let json =
+            r#"{"id":"r1","name":"Old","kind":"soap","wsdlUrl":"http://x?wsdl","operation":"Op"}"#;
+        let rf: RequestFile = serde_json::from_str(json).unwrap();
+        assert!(matches!(rf.kind, RequestKind::Soap { endpoint: None, .. }));
     }
 }

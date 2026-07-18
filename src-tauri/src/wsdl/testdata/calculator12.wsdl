@@ -1,0 +1,44 @@
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap12/"
+             xmlns:tns="http://example.com/calc"
+             xmlns:xs="http://www.w3.org/2001/XMLSchema"
+             targetNamespace="http://example.com/calc">
+  <types>
+    <xs:schema targetNamespace="http://example.com/calc">
+      <xs:element name="Add">
+        <xs:complexType><xs:sequence>
+          <xs:element name="a" type="xs:int"/>
+          <xs:element name="b" type="xs:int"/>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+      <xs:element name="Subtract">
+        <xs:complexType><xs:sequence>
+          <xs:element name="a" type="xs:int"/>
+          <xs:element name="b" type="xs:int"/>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+    </xs:schema>
+  </types>
+  <message name="AddIn"><part name="parameters" element="tns:Add"/></message>
+  <message name="SubtractIn"><part name="parameters" element="tns:Subtract"/></message>
+  <portType name="CalcPort">
+    <operation name="Add"><input message="tns:AddIn"/></operation>
+    <operation name="Subtract"><input message="tns:SubtractIn"/></operation>
+  </portType>
+  <binding name="CalcBinding" type="tns:CalcPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="Add">
+      <soap:operation soapAction="http://example.com/calc/Add"/>
+      <input><soap:body use="literal"/></input>
+    </operation>
+    <operation name="Subtract">
+      <soap:operation soapAction="http://example.com/calc/Subtract"/>
+      <input><soap:body use="literal"/></input>
+    </operation>
+  </binding>
+  <service name="CalcService12">
+    <port name="CalcPort" binding="tns:CalcBinding">
+      <soap:address location="http://example.com/calc"/>
+    </port>
+  </service>
+</definitions>

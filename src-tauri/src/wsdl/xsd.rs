@@ -156,22 +156,40 @@ impl<'a> Index<'a> {
 
     fn walk_complex(
         &self,
-        _t: Node<'a, 'a>,
-        _path_types: &mut Vec<(String, String)>,
-        _depth: usize,
+        t: Node<'a, 'a>,
+        path_types: &mut Vec<(String, String)>,
+        depth: usize,
     ) -> Result<NodeKind, WsdlError> {
-        // xs:sequence support only in this task; extended in later tasks.
-        let seq = _t
-            .children()
-            .find(|c| c.has_tag_name((XSD_NS, "sequence")));
-        if let Some(seq) = seq {
-            let mut children = Vec::new();
-            for child_el in seq.children().filter(|c| c.has_tag_name((XSD_NS, "element"))) {
-                children.push(self.walk_element(child_el, _path_types, _depth)?);
+        for child in t.children().filter(Node::is_element) {
+            if child.has_tag_name((XSD_NS, "sequence")) || child.has_tag_name((XSD_NS, "all")) {
+                return Ok(NodeKind::Sequence(self.walk_particle(child, path_types, depth)?));
             }
-            return Ok(NodeKind::Sequence(children));
+            if child.has_tag_name((XSD_NS, "choice")) {
+                return Ok(NodeKind::Choice(self.walk_particle(child, path_types, depth)?));
+            }
         }
         Ok(NodeKind::Sequence(vec![]))
+    }
+
+    fn walk_particle(
+        &self,
+        particle: Node<'a, 'a>,
+        path_types: &mut Vec<(String, String)>,
+        depth: usize,
+    ) -> Result<Vec<SchemaNode>, WsdlError> {
+        let mut out = Vec::new();
+        for child in particle.children().filter(|c| c.has_tag_name((XSD_NS, "element"))) {
+            let resolved = match child.attribute("ref") {
+                Some(r) => {
+                    let q = resolve_ref(child, r);
+                    self.element(&q)
+                        .ok_or_else(|| WsdlError::ElementNotFound { qname: qname_str(&q) })?
+                }
+                None => child,
+            };
+            out.push(self.walk_element(resolved, path_types, depth)?);
+        }
+        Ok(out)
     }
 }
 
@@ -336,5 +354,26 @@ mod tests {
         assert_eq!(node.attributes.len(), 1);
         assert_eq!(node.attributes[0].name, "id");
         assert!(node.attributes[0].required);
+    }
+
+    #[test]
+    fn choice_becomes_choice() {
+        let set = set_from(include_str!("testdata/choice_ref.xsd"));
+        let root = QName { namespace: "http://ex/cr".into(), local: "Pay".into() };
+        let node = build_schema(&set, &root).unwrap();
+        let NodeKind::Choice(branches) = &node.kind else { panic!("{:?}", node.kind) };
+        assert_eq!(branches.len(), 2);
+        assert_eq!(branches[0].name, "card");
+    }
+
+    #[test]
+    fn all_becomes_sequence_and_ref_resolves() {
+        let set = set_from(include_str!("testdata/choice_ref.xsd"));
+        let root = QName { namespace: "http://ex/cr".into(), local: "Addr".into() };
+        let node = build_schema(&set, &root).unwrap();
+        let NodeKind::Sequence(children) = &node.kind else { panic!("{:?}", node.kind) };
+        assert_eq!(children.len(), 2);
+        assert_eq!(children[0].name, "City"); // resolved from ref
+        assert!(matches!(children[0].kind, NodeKind::Leaf { xsd_type: XsdType::String, .. }));
     }
 }

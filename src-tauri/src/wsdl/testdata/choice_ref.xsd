@@ -1,0 +1,21 @@
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:tns="http://ex/cr"
+           targetNamespace="http://ex/cr">
+  <xs:element name="City" type="xs:string"/>
+  <xs:element name="Pay">
+    <xs:complexType>
+      <xs:choice>
+        <xs:element name="card" type="xs:string"/>
+        <xs:element name="cash" type="xs:boolean"/>
+      </xs:choice>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="Addr">
+    <xs:complexType>
+      <xs:all>
+        <xs:element ref="tns:City"/>
+        <xs:element name="zip" type="xs:string"/>
+      </xs:all>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

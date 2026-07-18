@@ -91,7 +91,7 @@ impl<'a> Index<'a> {
 
         let (kind, attributes) = match type_node {
             Some(t) if t.has_tag_name((XSD_NS, "complexType")) => {
-                (self.walk_complex(t, path_types, depth)?, collect_attributes(t))
+                (self.walk_complex(t, path_types, depth)?, self.collect_all_attributes(t))
             }
             Some(t) => (leaf_from_simple_type(t, el), vec![]),
             None => match el.attribute("type") {
@@ -99,7 +99,7 @@ impl<'a> Index<'a> {
                     let tq = resolve_ref(el, type_ref);
                     let attrs = self
                         .named_type(&tq)
-                        .map(collect_attributes)
+                        .map(|t| self.collect_all_attributes(t))
                         .unwrap_or_default();
                     (self.walk_named_type(&tq, el, path_types, depth)?, attrs)
                 }
@@ -160,6 +160,11 @@ impl<'a> Index<'a> {
         path_types: &mut Vec<(String, String)>,
         depth: usize,
     ) -> Result<NodeKind, WsdlError> {
+        if let Some(content) = t.children().find(|c| {
+            c.has_tag_name((XSD_NS, "complexContent")) || c.has_tag_name((XSD_NS, "simpleContent"))
+        }) {
+            return self.walk_derived_content(content, path_types, depth);
+        }
         for child in t.children().filter(Node::is_element) {
             if child.has_tag_name((XSD_NS, "sequence")) || child.has_tag_name((XSD_NS, "all")) {
                 return Ok(NodeKind::Sequence(self.walk_particle(child, path_types, depth)?));
@@ -169,6 +174,53 @@ impl<'a> Index<'a> {
             }
         }
         Ok(NodeKind::Sequence(vec![]))
+    }
+
+    /// complexContent/simpleContent extension|restriction: merge base then derived.
+    fn walk_derived_content(
+        &self,
+        content: Node<'a, 'a>,
+        path_types: &mut Vec<(String, String)>,
+        depth: usize,
+    ) -> Result<NodeKind, WsdlError> {
+        let deriv = content
+            .children()
+            .find(|c| c.has_tag_name((XSD_NS, "extension")) || c.has_tag_name((XSD_NS, "restriction")));
+        let Some(deriv) = deriv else { return Ok(NodeKind::Sequence(vec![])) };
+
+        let mut children = Vec::new();
+        // Base children first.
+        if let Some(base_ref) = deriv.attribute("base") {
+            let bq = resolve_ref(deriv, base_ref);
+            if bq.namespace != XSD_NS {
+                if let Some(base_t) = self.named_type(&bq) {
+                    if let NodeKind::Sequence(base_children) =
+                        self.walk_complex(base_t, path_types, depth)?
+                    {
+                        children.extend(base_children);
+                    }
+                }
+            }
+        }
+        // Derived particle appended.
+        for child in deriv.children().filter(Node::is_element) {
+            if child.has_tag_name((XSD_NS, "sequence")) || child.has_tag_name((XSD_NS, "all")) {
+                children.extend(self.walk_particle(child, path_types, depth)?);
+            } else if child.has_tag_name((XSD_NS, "choice")) {
+                // A choice inside an extension stays a nested Choice branch group.
+                let branches = self.walk_particle(child, path_types, depth)?;
+                children.push(SchemaNode {
+                    name: String::new(),
+                    namespace: None,
+                    occurs: Occurs { min: 1, max: MaxOccurs::Bounded(1) },
+                    nillable: false,
+                    doc: None,
+                    attributes: vec![],
+                    kind: NodeKind::Choice(branches),
+                });
+            }
+        }
+        Ok(NodeKind::Sequence(children))
     }
 
     fn walk_particle(
@@ -190,6 +242,28 @@ impl<'a> Index<'a> {
             out.push(self.walk_element(resolved, path_types, depth)?);
         }
         Ok(out)
+    }
+
+    fn collect_all_attributes(&self, t: Node<'a, 'a>) -> Vec<Attribute> {
+        let mut attrs = collect_attributes(t);
+        if let Some(content) = t.children().find(|c| {
+            c.has_tag_name((XSD_NS, "complexContent")) || c.has_tag_name((XSD_NS, "simpleContent"))
+        }) {
+            if let Some(deriv) = content.children().find(|c| {
+                c.has_tag_name((XSD_NS, "extension")) || c.has_tag_name((XSD_NS, "restriction"))
+            }) {
+                attrs.extend(collect_attributes(deriv));
+                if let Some(base_ref) = deriv.attribute("base") {
+                    let bq = resolve_ref(deriv, base_ref);
+                    if bq.namespace != XSD_NS {
+                        if let Some(base_t) = self.named_type(&bq) {
+                            attrs.extend(self.collect_all_attributes(base_t));
+                        }
+                    }
+                }
+            }
+        }
+        attrs
     }
 }
 
@@ -375,5 +449,16 @@ mod tests {
         assert_eq!(children.len(), 2);
         assert_eq!(children[0].name, "City"); // resolved from ref
         assert!(matches!(children[0].kind, NodeKind::Leaf { xsd_type: XsdType::String, .. }));
+    }
+
+    #[test]
+    fn extension_flattens_base_then_derived() {
+        let set = set_from(include_str!("testdata/inherit.xsd"));
+        let root = QName { namespace: "http://ex/inh".into(), local: "Derived".into() };
+        let node = build_schema(&set, &root).unwrap();
+        let NodeKind::Sequence(children) = &node.kind else { panic!("{:?}", node.kind) };
+        let names: Vec<&str> = children.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, vec!["id", "extra"]); // base first, then derived
+        assert!(node.attributes.iter().any(|a| a.name == "version"));
     }
 }

@@ -43,6 +43,9 @@ pub enum MaxOccurs {
     Unbounded,
 }
 
+// Consumed by engine::serialize / domain::validate in a later slice; the
+// xsd traversal only populates Occurs, it does not branch on it yet.
+#[allow(dead_code)]
 impl Occurs {
     pub fn optional(&self) -> bool {
         self.min == 0
@@ -86,15 +89,24 @@ mod tests {
 
     #[test]
     fn occurs_optional_and_repeatable() {
-        let opt = Occurs { min: 0, max: MaxOccurs::Bounded(1) };
+        let opt = Occurs {
+            min: 0,
+            max: MaxOccurs::Bounded(1),
+        };
         assert!(opt.optional());
         assert!(!opt.repeatable());
 
-        let req_many = Occurs { min: 1, max: MaxOccurs::Unbounded };
+        let req_many = Occurs {
+            min: 1,
+            max: MaxOccurs::Unbounded,
+        };
         assert!(!req_many.optional());
         assert!(req_many.repeatable());
 
-        let bounded_many = Occurs { min: 1, max: MaxOccurs::Bounded(3) };
+        let bounded_many = Occurs {
+            min: 1,
+            max: MaxOccurs::Bounded(3),
+        };
         assert!(bounded_many.repeatable());
     }
 
@@ -103,7 +115,10 @@ mod tests {
         let node = SchemaNode {
             name: "a".into(),
             namespace: Some("http://ex".into()),
-            occurs: Occurs { min: 1, max: MaxOccurs::Bounded(1) },
+            occurs: Occurs {
+                min: 1,
+                max: MaxOccurs::Bounded(1),
+            },
             nillable: false,
             doc: None,
             attributes: vec![],

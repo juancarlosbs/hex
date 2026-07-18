@@ -427,7 +427,7 @@ mod tests {
     use std::fs;
 
     fn tmp(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("hex-test-{}", name));
+        let dir = std::env::temp_dir().join(format!("hex-test-{name}"));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir

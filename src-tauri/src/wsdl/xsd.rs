@@ -7,6 +7,8 @@ use std::collections::HashMap;
 
 const XSD_NS: &str = "http://www.w3.org/2001/XMLSchema";
 const DEPTH_CAP: usize = 12;
+const UNSUPPORTED_DOC: &str = "unsupported: edit raw";
+const RECURSIVE_DOC: &str = "recursive: expand on demand";
 
 pub fn build_schema(set: &SchemaSet, root: &QName) -> Result<SchemaNode, WsdlError> {
     let docs: Vec<Document> = set
@@ -83,38 +85,9 @@ impl<'a> Index<'a> {
     ) -> Result<SchemaNode, WsdlError> {
         let occurs = read_occurs(el);
         let nillable = el.attribute("nillable") == Some("true");
-        let doc = read_doc(el);
-
-        let type_node = el
-            .children()
-            .find(|c| c.has_tag_name((XSD_NS, "complexType")) || c.has_tag_name((XSD_NS, "simpleType")));
-
-        let (kind, attributes) = match type_node {
-            Some(t) if t.has_tag_name((XSD_NS, "complexType")) => {
-                (self.walk_complex(t, path_types, depth)?, self.collect_all_attributes(t))
-            }
-            Some(t) => (leaf_from_simple_type(t, el), vec![]),
-            None => match el.attribute("type") {
-                Some(type_ref) => {
-                    let tq = resolve_ref(el, type_ref);
-                    let attrs = self
-                        .named_type(&tq)
-                        .map(|t| self.collect_all_attributes(t))
-                        .unwrap_or_default();
-                    (self.walk_named_type(&tq, el, path_types, depth)?, attrs)
-                }
-                None => (
-                    NodeKind::Leaf {
-                        xsd_type: XsdType::String,
-                        enum_values: vec![],
-                        default: el.attribute("default").map(str::to_string),
-                        fixed: el.attribute("fixed").map(str::to_string),
-                    },
-                    vec![],
-                ),
-            },
-        };
-
+        // kind + optional marker, computed together
+        let (kind, attributes, marker) = self.resolve_kind(el, path_types, depth)?;
+        let doc = read_doc(el).or(marker);
         Ok(SchemaNode {
             name: el.attribute("name").unwrap_or_default().to_string(),
             namespace: schema_tns(el),
@@ -126,32 +99,57 @@ impl<'a> Index<'a> {
         })
     }
 
-    fn walk_named_type(
+    fn resolve_kind(
         &self,
-        tq: &QName,
         el: Node<'a, 'a>,
         path_types: &mut Vec<(String, String)>,
         depth: usize,
-    ) -> Result<NodeKind, WsdlError> {
-        // Built-in xs:* type -> Leaf.
-        if tq.namespace == XSD_NS {
-            return Ok(leaf_from_builtin(tq, el));
+    ) -> Result<(NodeKind, Vec<Attribute>, Option<String>), WsdlError> {
+        let type_node = el
+            .children()
+            .find(|c| c.has_tag_name((XSD_NS, "complexType")) || c.has_tag_name((XSD_NS, "simpleType")));
+        match type_node {
+            Some(t) if t.has_tag_name((XSD_NS, "complexType")) => {
+                let kind = self.walk_complex(t, path_types, depth)?;
+                let marker = matches!(kind, NodeKind::Any).then(|| UNSUPPORTED_DOC.to_string());
+                Ok((kind, self.collect_all_attributes(t, depth), marker))
+            }
+            Some(t) => Ok((leaf_from_simple_type(t, el), vec![], None)),
+            None => match el.attribute("type") {
+                Some(type_ref) => {
+                    let tq = resolve_ref(el, type_ref);
+                    if tq.namespace == XSD_NS {
+                        return Ok((leaf_from_builtin(&tq, el), vec![], None));
+                    }
+                    let key = (tq.namespace.clone(), tq.local.clone());
+                    let t = self
+                        .named_type(&tq)
+                        .ok_or_else(|| WsdlError::TypeNotFound { qname: qname_str(&tq) })?;
+                    if t.has_tag_name((XSD_NS, "simpleType")) {
+                        return Ok((leaf_from_simple_type(t, el), vec![], None));
+                    }
+                    if depth >= DEPTH_CAP || path_types.contains(&key) {
+                        return Ok((NodeKind::Any, vec![], Some(RECURSIVE_DOC.to_string())));
+                    }
+                    path_types.push(key);
+                    let kind = self.walk_complex(t, path_types, depth + 1)?;
+                    path_types.pop();
+                    let attrs = self.collect_all_attributes(t, depth);
+                    let marker = matches!(kind, NodeKind::Any).then(|| UNSUPPORTED_DOC.to_string());
+                    Ok((kind, attrs, marker))
+                }
+                None => Ok((
+                    NodeKind::Leaf {
+                        xsd_type: XsdType::String,
+                        enum_values: vec![],
+                        default: el.attribute("default").map(str::to_string),
+                        fixed: el.attribute("fixed").map(str::to_string),
+                    },
+                    vec![],
+                    None,
+                )),
+            },
         }
-        let key = (tq.namespace.clone(), tq.local.clone());
-        let t = self
-            .named_type(tq)
-            .ok_or_else(|| WsdlError::TypeNotFound { qname: qname_str(tq) })?;
-        if t.has_tag_name((XSD_NS, "simpleType")) {
-            return Ok(leaf_from_simple_type(t, el));
-        }
-        // complexType: cycle/depth guard keyed by the named type.
-        if depth >= DEPTH_CAP || path_types.contains(&key) {
-            return Ok(recursive_placeholder());
-        }
-        path_types.push(key);
-        let kind = self.walk_complex(t, path_types, depth + 1)?;
-        path_types.pop();
-        Ok(kind)
     }
 
     fn walk_complex(
@@ -160,6 +158,17 @@ impl<'a> Index<'a> {
         path_types: &mut Vec<(String, String)>,
         depth: usize,
     ) -> Result<NodeKind, WsdlError> {
+        if t.children().any(|c| {
+            c.has_tag_name((XSD_NS, "group")) || c.has_tag_name((XSD_NS, "attributeGroup"))
+        }) && !t.children().any(|c| {
+            c.has_tag_name((XSD_NS, "sequence"))
+                || c.has_tag_name((XSD_NS, "choice"))
+                || c.has_tag_name((XSD_NS, "all"))
+                || c.has_tag_name((XSD_NS, "complexContent"))
+                || c.has_tag_name((XSD_NS, "simpleContent"))
+        }) {
+            return Ok(NodeKind::Any); // marker stamped by caller (walk_element)
+        }
         if let Some(content) = t.children().find(|c| {
             c.has_tag_name((XSD_NS, "complexContent")) || c.has_tag_name((XSD_NS, "simpleContent"))
         }) {
@@ -193,11 +202,16 @@ impl<'a> Index<'a> {
         if let Some(base_ref) = deriv.attribute("base") {
             let bq = resolve_ref(deriv, base_ref);
             if bq.namespace != XSD_NS {
-                if let Some(base_t) = self.named_type(&bq) {
-                    if let NodeKind::Sequence(base_children) =
-                        self.walk_complex(base_t, path_types, depth)?
-                    {
-                        children.extend(base_children);
+                let key = (bq.namespace.clone(), bq.local.clone());
+                if depth < DEPTH_CAP && !path_types.contains(&key) {
+                    if let Some(base_t) = self.named_type(&bq) {
+                        path_types.push(key);
+                        if let NodeKind::Sequence(base_children) =
+                            self.walk_complex(base_t, path_types, depth + 1)?
+                        {
+                            children.extend(base_children);
+                        }
+                        path_types.pop();
                     }
                 }
             }
@@ -230,7 +244,18 @@ impl<'a> Index<'a> {
         depth: usize,
     ) -> Result<Vec<SchemaNode>, WsdlError> {
         let mut out = Vec::new();
-        for child in particle.children().filter(|c| c.has_tag_name((XSD_NS, "element"))) {
+        for child in particle.children().filter(Node::is_element) {
+            if child.has_tag_name((XSD_NS, "any")) {
+                out.push(any_node("", None));
+                continue;
+            }
+            if child.has_tag_name((XSD_NS, "group")) {
+                out.push(any_node("", Some(UNSUPPORTED_DOC)));
+                continue;
+            }
+            if !child.has_tag_name((XSD_NS, "element")) {
+                continue;
+            }
             let resolved = match child.attribute("ref") {
                 Some(r) => {
                     let q = resolve_ref(child, r);
@@ -244,8 +269,11 @@ impl<'a> Index<'a> {
         Ok(out)
     }
 
-    fn collect_all_attributes(&self, t: Node<'a, 'a>) -> Vec<Attribute> {
+    fn collect_all_attributes(&self, t: Node<'a, 'a>, depth: usize) -> Vec<Attribute> {
         let mut attrs = collect_attributes(t);
+        if depth >= DEPTH_CAP {
+            return attrs;
+        }
         if let Some(content) = t.children().find(|c| {
             c.has_tag_name((XSD_NS, "complexContent")) || c.has_tag_name((XSD_NS, "simpleContent"))
         }) {
@@ -257,7 +285,7 @@ impl<'a> Index<'a> {
                     let bq = resolve_ref(deriv, base_ref);
                     if bq.namespace != XSD_NS {
                         if let Some(base_t) = self.named_type(&bq) {
-                            attrs.extend(self.collect_all_attributes(base_t));
+                            attrs.extend(self.collect_all_attributes(base_t, depth + 1));
                         }
                     }
                 }
@@ -355,8 +383,16 @@ fn collect_attributes(container: Node) -> Vec<Attribute> {
         .collect()
 }
 
-fn recursive_placeholder() -> NodeKind {
-    NodeKind::Any
+fn any_node(name: &str, doc: Option<&str>) -> SchemaNode {
+    SchemaNode {
+        name: name.to_string(),
+        namespace: None,
+        occurs: Occurs { min: 1, max: MaxOccurs::Bounded(1) },
+        nillable: false,
+        doc: doc.map(str::to_string),
+        attributes: vec![],
+        kind: NodeKind::Any,
+    }
 }
 
 fn map_xsd_type(local: &str) -> XsdType {
@@ -460,5 +496,53 @@ mod tests {
         let names: Vec<&str> = children.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, vec!["id", "extra"]); // base first, then derived
         assert!(node.attributes.iter().any(|a| a.name == "version"));
+    }
+
+    fn first_leaf_or_any(node: &SchemaNode) -> &NodeKind { &node.kind }
+
+    #[test]
+    fn xs_any_becomes_any() {
+        let set = set_from(include_str!("testdata/fallbacks.xsd"));
+        let root = QName { namespace: "http://ex/fb".into(), local: "WithAny".into() };
+        let node = build_schema(&set, &root).unwrap();
+        let NodeKind::Sequence(children) = &node.kind else { panic!() };
+        assert!(matches!(children[0].kind, NodeKind::Any));
+    }
+
+    #[test]
+    fn group_ref_is_marked_any() {
+        let set = set_from(include_str!("testdata/fallbacks.xsd"));
+        let root = QName { namespace: "http://ex/fb".into(), local: "WithGroup".into() };
+        let node = build_schema(&set, &root).unwrap();
+        assert!(matches!(node.kind, NodeKind::Any));
+        assert_eq!(node.doc.as_deref(), Some("unsupported: edit raw"));
+    }
+
+    #[test]
+    fn recursive_type_terminates_with_marker() {
+        let set = set_from(include_str!("testdata/fallbacks.xsd"));
+        let root = QName { namespace: "http://ex/fb".into(), local: "Recursive".into() };
+        let node = build_schema(&set, &root).unwrap(); // must not stack-overflow
+        // Walk down `next` until the guard emits an Any marked "recursive...".
+        fn find_recursive(n: &SchemaNode) -> bool {
+            if matches!(n.kind, NodeKind::Any) && n.doc.as_deref() == Some("recursive: expand on demand") {
+                return true;
+            }
+            match &n.kind {
+                NodeKind::Sequence(c) | NodeKind::Choice(c) => c.iter().any(find_recursive),
+                _ => false,
+            }
+        }
+        assert!(find_recursive(&node));
+        let _ = first_leaf_or_any(&node);
+    }
+
+    #[test]
+    fn cyclic_extension_terminates() {
+        let set = set_from(include_str!("testdata/cyclic_extension.xsd"));
+        let root = QName { namespace: "http://ex/cyc".into(), local: "Root".into() };
+        // Must not stack-overflow; the cycle guard truncates the base merge.
+        let node = build_schema(&set, &root).unwrap();
+        assert_eq!(node.name, "Root");
     }
 }

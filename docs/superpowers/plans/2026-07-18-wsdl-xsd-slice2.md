@@ -6,7 +6,7 @@
 
 **Architecture:** New pure domain types in `domain/schema.rs`; a pure `wsdl::xsd` module that indexes the already-resolved `SchemaSet` and walks the XSD from an `input_element` QName; a thin async command that re-fetches + resolves + builds. No new UI — verification is Rust tests + serialized `SchemaNode` JSON.
 
-**Tech Stack:** Rust, roxmltree (XSD parsing), serde + specta::Type (IPC types), thiserror (`WsdlError`), reqwest/rustls (command fetch only).
+**Tech Stack:** Rust, roxmltree (XSD parsing), serde (IPC types via serde; tauri-specta not yet wired — ADR-007), thiserror (`WsdlError`), reqwest/rustls (command fetch only).
 
 ## Global Constraints
 
@@ -28,7 +28,7 @@
 - Modify: `src-tauri/src/domain/mod.rs`
 
 **Interfaces:**
-- Produces: `SchemaNode { name: String, namespace: Option<String>, occurs: Occurs, nillable: bool, doc: Option<String>, attributes: Vec<Attribute>, kind: NodeKind }`; `enum NodeKind { Leaf { xsd_type: XsdType, enum_values: Vec<String>, default: Option<String>, fixed: Option<String> }, Sequence(Vec<SchemaNode>), Choice(Vec<SchemaNode>), Any }`; `struct Occurs { min: u32, max: MaxOccurs }` with `fn optional(&self)->bool` and `fn repeatable(&self)->bool`; `enum MaxOccurs { Bounded(u32), Unbounded }`; `enum XsdType { String, Boolean, Integer, Decimal, Double, Date, DateTime, Time, GYearMonth, Base64Binary, Other(String) }`; `struct Attribute { name: String, xsd_type: XsdType, required: bool, enum_values: Vec<String>, default: Option<String> }`. All derive `Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type` with `#[serde(rename_all = "camelCase")]` on structs.
+- Produces: `SchemaNode { name: String, namespace: Option<String>, occurs: Occurs, nillable: bool, doc: Option<String>, attributes: Vec<Attribute>, kind: NodeKind }`; `enum NodeKind { Leaf { xsd_type: XsdType, enum_values: Vec<String>, default: Option<String>, fixed: Option<String> }, Sequence(Vec<SchemaNode>), Choice(Vec<SchemaNode>), Any }`; `struct Occurs { min: u32, max: MaxOccurs }` with `fn optional(&self)->bool` and `fn repeatable(&self)->bool`; `enum MaxOccurs { Bounded(u32), Unbounded }`; `enum XsdType { String, Boolean, Integer, Decimal, Double, Date, DateTime, Time, GYearMonth, Base64Binary, Other(String) }`; `struct Attribute { name: String, xsd_type: XsdType, required: bool, enum_values: Vec<String>, default: Option<String> }`. All derive `Debug, Clone, PartialEq, Serialize, Deserialize` with `#[serde(rename_all = "camelCase")]` on structs. (No `specta::Type` — tauri-specta is not wired in this repo; see ADR-007 / Notes.)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -89,7 +89,7 @@ Prepend to `src-tauri/src/domain/schema.rs` (above the test module):
 use serde::{Deserialize, Serialize};
 
 /// The shape of a SOAP operation input. Immutable tree derived from XSD.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SchemaNode {
     pub name: String,
@@ -101,7 +101,7 @@ pub struct SchemaNode {
     pub kind: NodeKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum NodeKind {
     Leaf {
@@ -115,14 +115,14 @@ pub enum NodeKind {
     Any,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Occurs {
     pub min: u32,
     pub max: MaxOccurs,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum MaxOccurs {
     Bounded(u32),
@@ -140,7 +140,7 @@ impl Occurs {
 }
 
 /// Subset of simple types supported in MVP (ADR-010).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum XsdType {
     String,
@@ -156,7 +156,7 @@ pub enum XsdType {
     Other(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Attribute {
     pub name: String,
@@ -1448,5 +1448,5 @@ git commit -m "feat(commands): get_operation_schema — wsdl_url + input_element
 
 ## Notes / Divergences flagged
 
-- **No `bindings.ts` in this repo.** Despite CLAUDE.md/docs, tauri-specta generation is not wired; the frontend uses hand-written types in `src/lib/api.ts` with plain `invoke()`. Slice 2 ships zero UI, so no `api.ts` wrapper is added here — the `getOperationSchema` wrapper belongs to slice 3 (SchemaForm). `#[derive(specta::Type)]` is kept on the new domain types for when generation is wired. **Flag to the user.**
+- **No `bindings.ts` / no `specta` in this repo.** Despite CLAUDE.md/docs, tauri-specta is not wired: `specta` is not a dependency, no type derives `specta::Type`, `lib.rs` uses `tauri::generate_handler!`, and `src/bindings.ts` does not exist. The frontend uses hand-written types in `src/lib/api.ts` with plain `invoke()`. Documented as a TODO in `docs/decisions.md` ADR-007. New IPC types therefore derive only `Serialize, Deserialize` (matching `domain/wsdl.rs`). Slice 2 ships zero UI, so no `api.ts` wrapper is added — the `getOperationSchema` wrapper belongs to slice 3 (SchemaForm).
 - `xs:int`/`long`/`short`/`byte` map to `XsdType::Integer`; `float` to `Double`. Extends the domain-model §2 subset pragmatically (real WSDLs use `xs:int`).

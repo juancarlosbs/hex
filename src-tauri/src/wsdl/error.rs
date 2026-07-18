@@ -10,4 +10,6 @@ pub enum WsdlError {
     UnsupportedStyle,
     #[error("not found in WSDL: {qname}")]
     ElementNotFound { qname: String },
+    #[error("type not found in schema: {qname}")]
+    TypeNotFound { qname: String },
 }

@@ -30,8 +30,10 @@ export function ImportWsdlModal({ open, onClose }: Props) {
   async function handlePrimary() {
     if (phase.state === "preview") {
       await confirm(workspaceId);
-      setUrl("");
-      onClose();
+      if (useWsdlImportStore.getState().phase.state !== "error") {
+        setUrl("");
+        onClose();
+      }
       return;
     }
     const trimmed = url.trim();

@@ -28,8 +28,12 @@ slice 3's `SchemaForm` will render.
 - `WsdlError::TypeNotFound { qname }` for a dangling type/element reference.
 
 **Out (documented future demand):**
-- **`group` / `attributeGroup` refs**: backlog, post-MVP. When encountered, emit a marked `Any`
-  node (raw-editor fallback), never silently drop.
+- **`group` / `attributeGroup` refs — future demand (post-MVP backlog).** Full expansion
+  (inlining the referenced particle / attribute set, like `element ref` and `extension` do here)
+  is explicitly deferred to a follow-up slice. Until then this slice does NOT drop them silently:
+  a `group`/`attributeGroup` ref becomes a marked `Any` node (`doc = "unsupported: edit raw"`),
+  so the operation stays usable via the raw editor and the gap is visible. `xs:all` is NOT part
+  of this backlog — it is handled now, as a `Sequence` (see In-scope).
 - **Lazy expansion command** (`expand_schema_node`): deferred until slice 3's form needs it.
   MVP truncates recursion with a marked placeholder node (see §Recursion guard).
 - **`NsRegistry` deterministic prefixes** (`soap-engine.md` §3): serialize-time concern, not

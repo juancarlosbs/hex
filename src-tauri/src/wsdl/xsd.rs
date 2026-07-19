@@ -225,16 +225,23 @@ impl<'a> Index<'a> {
                         fixed: None,
                     });
                 }
-                if let Some(base_t) = self.named_type(&bq) {
-                    if base_t.has_tag_name((XSD_NS, "simpleType")) {
-                        return Ok(leaf_from_simple_type(base_t, content));
-                    }
-                    // base is another complexType with simpleContent: recurse one level.
-                    if let Some(inner) = base_t
-                        .children()
-                        .find(|c| c.has_tag_name((XSD_NS, "simpleContent")))
-                    {
-                        return self.walk_derived_content(inner, path_types, depth);
+                let key = (bq.namespace.clone(), bq.local.clone());
+                if depth < DEPTH_CAP && !path_types.contains(&key) {
+                    if let Some(base_t) = self.named_type(&bq) {
+                        if base_t.has_tag_name((XSD_NS, "simpleType")) {
+                            return Ok(leaf_from_simple_type(base_t, content));
+                        }
+                        // base is another complexType with simpleContent: recurse,
+                        // guarded against cyclic base chains like the complexContent path.
+                        if let Some(inner) = base_t
+                            .children()
+                            .find(|c| c.has_tag_name((XSD_NS, "simpleContent")))
+                        {
+                            path_types.push(key);
+                            let kind = self.walk_derived_content(inner, path_types, depth + 1)?;
+                            path_types.pop();
+                            return Ok(kind);
+                        }
                     }
                 }
             }
@@ -710,6 +717,22 @@ mod tests {
             .attributes
             .iter()
             .any(|a| a.name == "currency" && a.required));
+    }
+
+    #[test]
+    fn cyclic_simple_content_terminates() {
+        let set = set_from(include_str!("testdata/cyclic_simple_content.xsd"));
+        let root = QName {
+            namespace: "http://ex/csc".into(),
+            local: "Root".into(),
+        };
+        // Must not stack-overflow; the cycle guard falls back to a string leaf.
+        let node = build_schema(&set, &root).unwrap();
+        assert!(
+            matches!(node.kind, NodeKind::Leaf { .. }),
+            "{:?}",
+            node.kind
+        );
     }
 
     #[tokio::test]

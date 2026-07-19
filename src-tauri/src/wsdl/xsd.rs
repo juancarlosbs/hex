@@ -94,7 +94,7 @@ impl<'a> Index<'a> {
         let nillable = el.attribute("nillable") == Some("true");
         // kind + optional marker, computed together
         let (kind, attributes, marker) = self.resolve_kind(el, path_types, depth)?;
-        let doc = read_doc(el).or(marker);
+        let doc = marker.or_else(|| read_doc(el));
         Ok(SchemaNode {
             name: el.attribute("name").unwrap_or_default().to_string(),
             namespace: schema_tns(el),
@@ -211,6 +211,41 @@ impl<'a> Index<'a> {
         let Some(deriv) = deriv else {
             return Ok(NodeKind::Sequence(vec![]));
         };
+
+        // simpleContent: the element carries a scalar text value (+ attributes),
+        // not a particle. Resolve the value type from the extension/restriction base.
+        if content.has_tag_name((XSD_NS, "simpleContent")) {
+            if let Some(base_ref) = deriv.attribute("base") {
+                let bq = resolve_ref(deriv, base_ref);
+                if bq.namespace == XSD_NS {
+                    return Ok(NodeKind::Leaf {
+                        xsd_type: map_xsd_type(&bq.local),
+                        enum_values: enumeration_values(deriv),
+                        default: None,
+                        fixed: None,
+                    });
+                }
+                if let Some(base_t) = self.named_type(&bq) {
+                    if base_t.has_tag_name((XSD_NS, "simpleType")) {
+                        return Ok(leaf_from_simple_type(base_t, content));
+                    }
+                    // base is another complexType with simpleContent: recurse one level.
+                    if let Some(inner) = base_t
+                        .children()
+                        .find(|c| c.has_tag_name((XSD_NS, "simpleContent")))
+                    {
+                        return self.walk_derived_content(inner, path_types, depth);
+                    }
+                }
+            }
+            // Unresolvable simpleContent value type: fall back to a string leaf.
+            return Ok(NodeKind::Leaf {
+                xsd_type: XsdType::String,
+                enum_values: vec![],
+                default: None,
+                fixed: None,
+            });
+        }
 
         let mut children = Vec::new();
         // Base children first.
@@ -376,20 +411,24 @@ fn leaf_from_simple_type(t: Node, el: Node) -> NodeKind {
         .and_then(|r| r.attribute("base"))
         .map(|b| b.rsplit(':').next().unwrap_or(b).to_string())
         .unwrap_or_else(|| "string".into());
-    let enum_values = restriction
-        .map(|r| {
-            r.children()
-                .filter(|c| c.has_tag_name((XSD_NS, "enumeration")))
-                .filter_map(|e| e.attribute("value").map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
+    let enum_values = restriction.map(enumeration_values).unwrap_or_default();
     NodeKind::Leaf {
         xsd_type: map_xsd_type(&base_local),
         enum_values,
         default: el.attribute("default").map(str::to_string),
         fixed: el.attribute("fixed").map(str::to_string),
     }
+}
+
+/// Collects `xs:enumeration` values directly under `container` (a
+/// `restriction` element). Returns empty for containers without any
+/// (e.g. an `extension`, which has no enumerations).
+fn enumeration_values(container: Node) -> Vec<String> {
+    container
+        .children()
+        .filter(|c| c.has_tag_name((XSD_NS, "enumeration")))
+        .filter_map(|e| e.attribute("value").map(str::to_string))
+        .collect()
 }
 
 fn collect_attributes(container: Node) -> Vec<Attribute> {
@@ -646,6 +685,31 @@ mod tests {
         // Must not stack-overflow; the cycle guard truncates the base merge.
         let node = build_schema(&set, &root).unwrap();
         assert_eq!(node.name, "Root");
+    }
+
+    #[test]
+    fn simple_content_is_leaf_with_attributes() {
+        let set = set_from(include_str!("testdata/simple_content.xsd"));
+        let root = QName {
+            namespace: "http://ex/sc".into(),
+            local: "Amount".into(),
+        };
+        let node = build_schema(&set, &root).unwrap();
+        assert!(
+            matches!(
+                node.kind,
+                NodeKind::Leaf {
+                    xsd_type: XsdType::Decimal,
+                    ..
+                }
+            ),
+            "expected decimal Leaf, got {:?}",
+            node.kind
+        );
+        assert!(node
+            .attributes
+            .iter()
+            .any(|a| a.name == "currency" && a.required));
     }
 
     #[tokio::test]

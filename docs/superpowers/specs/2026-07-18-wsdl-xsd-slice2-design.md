@@ -137,3 +137,53 @@ fetch root WSDL (reqwest, rustls — same fetch closure as `import_wsdl`), `wsdl
 Run `get_operation_schema` against the dneonline calculator WSDL (already used in slice 1) and
 inspect the returned `SchemaNode` JSON for the `Add` operation (two `int` leaves). Then a public
 WSDL with nested complex types to confirm sequence/choice/extension expansion end-to-end.
+
+---
+
+## As-built notes for Slice 3 (SchemaForm) — READ FIRST
+
+Decisions and contracts settled while implementing this slice that Slice 3 depends on:
+
+- **Entry chain**: user clicks a SOAP operation node → the persisted node already carries
+  `wsdl_url` + `input_element` (QName) from Slice 1 → call
+  `get_operation_schema(wsdl_url, input_element) -> SchemaNode`. The schema is re-resolved on
+  demand and NOT persisted (ADR-011). There is no caching layer yet.
+- **No `bindings.ts` — hand-write the wrapper.** tauri-specta is not wired (ADR-007). Slice 3
+  must add a `getOperationSchema` wrapper + the `SchemaNode`/`NodeKind`/`XsdType`/`Occurs`/
+  `Attribute` TypeScript types to `src/lib/api.ts` by hand (mirror the existing `RequestKind`
+  camelCase style there). The Rust types serialize camelCase; note the struct-variant field
+  renames on `NodeKind::Leaf` (`xsdType`, `enumValues`).
+- **`NodeKind::Any` is the raw-editor fallback and is disambiguated by `doc`:**
+  `doc == "unsupported: edit raw"` → construct not supported (`xs:any`, `group`/`attributeGroup`);
+  `doc == "recursive: expand on demand"` → recursion was cut at the depth cap / a type cycle.
+  The form MUST branch on these markers (render a raw XML editor for the subnode). There is no
+  `NodeKind::LazyRef` and no `expand_schema_node` command yet — if Slice 3 wants real lazy
+  expansion instead of a raw editor for the recursive case, that is new Rust work.
+- **A node can be BOTH a `Leaf` and carry `attributes`** (from `xs:simpleContent` extension, e.g.
+  `<amount currency="USD">100</amount>`). The widget for a leaf must be able to render a value
+  input alongside attribute inputs.
+- **`fixed` = read-only**, `default` pre-fills, non-empty `enum_values` → dropdown,
+  `occurs.optional()` → collapsed/removable, `occurs.repeatable()` → add/remove group,
+  `NodeKind::Choice` → branch selector (see `docs/domain-model.md` §4 and `docs/ui.md`).
+
+## Deferred follow-ups (found during implementation / final review — not yet fixed)
+
+Tracked here because the implementation ledger is scratch. None block Slice 2 (all latent — no
+consumer reads them yet), but they must be resolved before the slices that rely on them:
+
+- **`elementFormDefault` ignored (fix before the serializer slice).** `wsdl::xsd::schema_tns`
+  assigns every node the enclosing schema's `targetNamespace`. In XSD, *local* (non-global)
+  elements are namespace-qualified only when `elementFormDefault="qualified"` (the XSD default is
+  `unqualified` → no namespace). Global elements (root / via `ref`) are always qualified, so those
+  are correct; nested locals under a default-`unqualified` schema currently get the wrong
+  namespace. Harmless until the envelope serializer reads `SchemaNode.namespace`. See
+  `docs/soap-engine.md` §3.
+- **`collect_all_attributes` has a depth cap but no cycle set** — cyclic/diamond attribute
+  inheritance yields duplicated `Attribute` entries (terminates via depth cap; pathological input
+  only).
+- **Chameleon `xs:include`** (an included schema with no `targetNamespace`, adopting the
+  includer's) → indexed under `("", name)`, referenced under the includer's tns → `TypeNotFound`
+  instead of degrading. Backlog.
+- **`group`/`attributeGroup` full expansion** — still marked `Any` (post-MVP backlog, see Out).
+- **tauri-specta wiring** — ADR-007; replace hand-written `api.ts` types with generated
+  `bindings.ts` in its own slice.

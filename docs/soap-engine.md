@@ -112,6 +112,13 @@ When building `SchemaNode`s, collect the distinct `namespace`s from the subtree 
 NsRegistry: uri -> prefix (stable discovery order)
 ```
 
+> **Known gap (slice 2, fix before wiring this):** `wsdl::xsd::schema_tns` currently sets every
+> node's `namespace` to the enclosing schema's `targetNamespace`, ignoring `elementFormDefault`.
+> Local (non-global) elements must be namespaced only when `elementFormDefault="qualified"`; the
+> XSD default is `unqualified` (no namespace). Global elements (root / via `ref`) are always
+> qualified. Fix `schema_tns` to honor `elementFormDefault` before the serializer reads
+> `SchemaNode.namespace`, or default-`unqualified` schemas will emit wrong prefixes.
+
 ---
 
 ## 4. Serialize the envelope (`engine::serialize`) — the "inverse"

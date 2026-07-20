@@ -11,4 +11,16 @@ describe("Waterfall", () => {
     expect(screen.getByText(/TTFB/)).toBeTruthy();
     expect(screen.queryByText(/TLS/)).toBeNull();
   });
+
+  it("guards against zero total time (no NaN width)", () => {
+    const { container } = render(
+      <Waterfall timing={{ dnsMs: 0, tcpMs: 0, tlsMs: 0, ttfbMs: 0, downloadMs: 0, totalMs: 0 }} />
+    );
+    expect(screen.getByText(/DNS/)).toBeTruthy();
+    // Bug: 0/0 -> NaN% is invalid CSS; jsdom drops it, leaving width "".
+    // Guarded, each bar must resolve to a valid "0%".
+    const bars = container.querySelectorAll<HTMLElement>("div.h-full.rounded-full");
+    expect(bars.length).toBe(5);
+    bars.forEach((bar) => expect(bar.style.width).toBe("0%"));
+  });
 });

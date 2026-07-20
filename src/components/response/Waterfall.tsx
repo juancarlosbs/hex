@@ -35,7 +35,7 @@ export function Waterfall({ timing }: WaterfallProps) {
             <div className="flex-1 h-[6px] bg-secondary rounded-full overflow-hidden">
               <div
                 className={cn("h-full rounded-full", phase.barClass)}
-                style={{ width: `${(phase.ms / timing.totalMs) * 100}%` }}
+                style={{ width: `${timing.totalMs > 0 ? (phase.ms / timing.totalMs) * 100 : 0}%` }}
               />
             </div>
             <span

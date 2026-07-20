@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+pub mod serialize;
+
 #[derive(Debug, Deserialize)]
 pub struct SendSpec {
     pub method: String,

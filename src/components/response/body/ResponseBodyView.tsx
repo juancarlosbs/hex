@@ -1,5 +1,6 @@
 import { ResponseBodyView as ViewMode } from "../../../lib/response-types";
 import { JsonTree } from "./JsonTree";
+import { XmlTree } from "./XmlTree";
 
 interface ResponseBodyViewProps {
   view: ViewMode;
@@ -16,6 +17,10 @@ export function ResponseBodyView({ view, body }: ResponseBodyViewProps) {
         style={{ fontFamily: "var(--font-mono)" }}
       />
     );
+  }
+
+  if (body.trim().startsWith("<")) {
+    return <XmlTree xml={body} />;
   }
 
   let parsed: unknown;

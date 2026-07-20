@@ -4,9 +4,11 @@ use std::collections::HashMap;
 
 pub mod connector;
 pub mod error;
+pub mod fault;
 pub mod serialize;
 
 use connector::TimingBreakdown;
+use fault::SoapFault;
 
 #[derive(Debug, Deserialize)]
 pub struct SendSpec {
@@ -30,6 +32,15 @@ pub struct HttpResponse {
     pub headers: HashMap<String, String>,
     pub body: String,
     pub timing: TimingBreakdown,
+    pub fault: Option<SoapFault>,
+}
+
+/// True when a Content-Type header indicates XML/SOAP (fault detection only applies there).
+fn is_xml_content_type(headers: &HashMap<String, String>) -> bool {
+    headers.get("content-type").is_some_and(|ct| {
+        let ct = ct.to_ascii_lowercase();
+        ct.contains("text/xml") || ct.contains("application/soap+xml") || ct.contains("/xml")
+    })
 }
 
 fn enabled(list: &[KeyValueEntry]) -> impl Iterator<Item = &KeyValueEntry> {
@@ -136,6 +147,12 @@ pub async fn send(spec: SendSpec) -> Result<HttpResponse, String> {
             .or_insert(value);
     }
 
+    let fault = if is_xml_content_type(&headers) {
+        fault::detect_fault(&raw.body)
+    } else {
+        None
+    };
+
     Ok(HttpResponse {
         status: raw.status,
         status_text: http::StatusCode::from_u16(raw.status)
@@ -148,6 +165,7 @@ pub async fn send(spec: SendSpec) -> Result<HttpResponse, String> {
         headers,
         body: raw.body,
         timing: raw.timing,
+        fault,
     })
 }
 

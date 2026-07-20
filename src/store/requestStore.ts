@@ -10,7 +10,7 @@ import {
   RequestTab,
   makeEmptyRequest,
 } from "../lib/request-types";
-import { api, RequestFileData } from "../lib/api";
+import { api, FormValue, RequestFileData } from "../lib/api";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useCollectionStore } from "./collectionStore";
 import { useResponseStore } from "./responseStore";
@@ -43,6 +43,8 @@ interface RequestState {
   removeFormRow(id: string, rowId: string): void;
 
   setAuth(id: string, auth: AuthConfig): void;
+
+  setSoapValue(id: string, next: FormValue): void;
 }
 
 const uid = () => crypto.randomUUID();
@@ -237,6 +239,14 @@ export const useRequestStore = create<RequestState>((set, get) => ({
 
   setAuth(id, auth) {
     set((s) => ({ openRequests: patch(s.openRequests, id, { auth, dirty: true }) }));
+  },
+
+  setSoapValue(id, next) {
+    set((s) => {
+      const r = s.openRequests[id];
+      if (!r || !r.soap) return s;
+      return { openRequests: patch(s.openRequests, id, { soap: { ...r.soap, value: next } }) };
+    });
   },
 }));
 

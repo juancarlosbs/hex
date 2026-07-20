@@ -8,12 +8,15 @@ import { HeadersTab } from "./HeadersTab";
 import { BodyTab } from "./body/BodyTab";
 import { AuthTab } from "./auth/AuthTab";
 import { RequestEmpty } from "./RequestEmpty";
+import { SchemaForm } from "./soap/SchemaForm";
 
 export function RequestPanel() {
   const activeId = useRequestStore((s) => s.activeId);
   const activeTab = useRequestStore((s) => (activeId ? s.openRequests[activeId]?.activeTab : null));
   const method = useRequestStore((s) => (activeId ? s.openRequests[activeId]?.method : undefined));
+  const soap = useRequestStore((s) => (activeId ? s.openRequests[activeId]?.soap : undefined));
   const saveRequest = useRequestStore((s) => s.saveRequest);
+  const setSoapValue = useRequestStore((s) => s.setSoapValue);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -27,6 +30,24 @@ export function RequestPanel() {
   }, [activeId, saveRequest]);
 
   if (!activeId) return <RequestEmpty />;
+
+  if (soap) {
+    return (
+      <div className="flex flex-col h-full bg-background">
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {soap.schema === null ? (
+            <div className="p-3 text-[12px] text-muted">Loading schema…</div>
+          ) : (
+            <SchemaForm
+              schema={soap.schema}
+              value={soap.value}
+              onChange={(next) => setSoapValue(activeId, next)}
+            />
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-background">

@@ -25,9 +25,15 @@ pub fn detect_fault(body: &str) -> Option<SoapFault> {
             .map(|t| t.trim().to_string())
     };
 
+    // A <Fault> is always an error (F3): once found, always return Some, even if
+    // code/reason are missing — never let a Fault render as success.
     // SOAP 1.1: <faultcode>/<faultstring>. SOAP 1.2: <Code><Value>/<Reason><Text>.
-    let code = child_text("faultcode").or_else(|| child_text("Value"))?;
-    let reason = child_text("faultstring").or_else(|| child_text("Text"))?;
+    let code = child_text("faultcode")
+        .or_else(|| child_text("Value"))
+        .unwrap_or_default();
+    let reason = child_text("faultstring")
+        .or_else(|| child_text("Text"))
+        .unwrap_or_default();
     let detail = child_text("detail").or_else(|| child_text("Detail"));
     let actor = child_text("faultactor").or_else(|| child_text("Role"));
 
@@ -63,5 +69,13 @@ mod tests {
     #[test]
     fn no_fault_on_success() {
         assert!(detect_fault("<a><b>ok</b></a>").is_none());
+    }
+    #[test]
+    fn fault_with_missing_faultstring_still_detected() {
+        let xml = r#"<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+          <soap:Body><soap:Fault><faultcode>soap:Server</faultcode></soap:Fault></soap:Body></soap:Envelope>"#;
+        let f = detect_fault(xml).unwrap();
+        assert_eq!(f.code, "soap:Server");
+        assert_eq!(f.reason, "");
     }
 }

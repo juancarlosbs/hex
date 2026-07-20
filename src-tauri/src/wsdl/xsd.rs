@@ -1,0 +1,754 @@
+use crate::domain::schema::{Attribute, MaxOccurs, NodeKind, Occurs, SchemaNode, XsdType};
+use crate::domain::wsdl::QName;
+use crate::wsdl::error::WsdlError;
+use crate::wsdl::resolve::SchemaSet;
+use roxmltree::{Document, Node};
+use std::collections::HashMap;
+
+const XSD_NS: &str = "http://www.w3.org/2001/XMLSchema";
+const DEPTH_CAP: usize = 12;
+const UNSUPPORTED_DOC: &str = "unsupported: edit raw";
+const RECURSIVE_DOC: &str = "recursive: expand on demand";
+
+pub fn build_schema(set: &SchemaSet, root: &QName) -> Result<SchemaNode, WsdlError> {
+    let docs: Vec<Document> = set
+        .docs
+        .iter()
+        .map(|d| {
+            Document::parse(&d.xml).map_err(|e| WsdlError::InvalidXml {
+                url: d.url.clone(),
+                message: e.to_string(),
+            })
+        })
+        .collect::<Result<_, _>>()?;
+    let index = Index::build(&docs);
+    let el = index
+        .element(root)
+        .ok_or_else(|| WsdlError::ElementNotFound {
+            qname: qname_str(root),
+        })?;
+    index.walk_element(el, &mut Vec::new(), 0)
+}
+
+fn qname_str(q: &QName) -> String {
+    format!("{{{}}}{}", q.namespace, q.local)
+}
+
+/// Global elements and named types keyed by (targetNamespace, name).
+struct Index<'a> {
+    elements: HashMap<(String, String), Node<'a, 'a>>,
+    types: HashMap<(String, String), Node<'a, 'a>>,
+}
+
+impl<'a> Index<'a> {
+    fn build(docs: &'a [Document<'a>]) -> Self {
+        let mut elements = HashMap::new();
+        let mut types = HashMap::new();
+        for doc in docs {
+            for schema in doc
+                .root()
+                .descendants()
+                .filter(|n| n.has_tag_name((XSD_NS, "schema")))
+            {
+                let tns = schema
+                    .attribute("targetNamespace")
+                    .unwrap_or("")
+                    .to_string();
+                for child in schema.children().filter(Node::is_element) {
+                    let Some(name) = child.attribute("name") else {
+                        continue;
+                    };
+                    let key = (tns.clone(), name.to_string());
+                    if child.has_tag_name((XSD_NS, "element")) {
+                        elements.insert(key, child);
+                    } else if child.has_tag_name((XSD_NS, "complexType"))
+                        || child.has_tag_name((XSD_NS, "simpleType"))
+                    {
+                        types.insert(key, child);
+                    }
+                }
+            }
+        }
+        Index { elements, types }
+    }
+
+    fn element(&self, q: &QName) -> Option<Node<'a, 'a>> {
+        self.elements
+            .get(&(q.namespace.clone(), q.local.clone()))
+            .copied()
+    }
+
+    fn named_type(&self, q: &QName) -> Option<Node<'a, 'a>> {
+        self.types
+            .get(&(q.namespace.clone(), q.local.clone()))
+            .copied()
+    }
+
+    fn walk_element(
+        &self,
+        el: Node<'a, 'a>,
+        path_types: &mut Vec<(String, String)>,
+        depth: usize,
+    ) -> Result<SchemaNode, WsdlError> {
+        let occurs = read_occurs(el);
+        let nillable = el.attribute("nillable") == Some("true");
+        // kind + optional marker, computed together
+        let (kind, attributes, marker) = self.resolve_kind(el, path_types, depth)?;
+        let doc = marker.or_else(|| read_doc(el));
+        Ok(SchemaNode {
+            name: el.attribute("name").unwrap_or_default().to_string(),
+            namespace: schema_tns(el),
+            occurs,
+            nillable,
+            doc,
+            attributes,
+            kind,
+        })
+    }
+
+    fn resolve_kind(
+        &self,
+        el: Node<'a, 'a>,
+        path_types: &mut Vec<(String, String)>,
+        depth: usize,
+    ) -> Result<(NodeKind, Vec<Attribute>, Option<String>), WsdlError> {
+        let type_node = el.children().find(|c| {
+            c.has_tag_name((XSD_NS, "complexType")) || c.has_tag_name((XSD_NS, "simpleType"))
+        });
+        match type_node {
+            Some(t) if t.has_tag_name((XSD_NS, "complexType")) => {
+                let kind = self.walk_complex(t, path_types, depth)?;
+                let marker = matches!(kind, NodeKind::Any).then(|| UNSUPPORTED_DOC.to_string());
+                Ok((kind, self.collect_all_attributes(t, depth), marker))
+            }
+            Some(t) => Ok((leaf_from_simple_type(t, el), vec![], None)),
+            None => match el.attribute("type") {
+                Some(type_ref) => {
+                    let tq = resolve_ref(el, type_ref);
+                    if tq.namespace == XSD_NS {
+                        return Ok((leaf_from_builtin(&tq, el), vec![], None));
+                    }
+                    let key = (tq.namespace.clone(), tq.local.clone());
+                    let t = self
+                        .named_type(&tq)
+                        .ok_or_else(|| WsdlError::TypeNotFound {
+                            qname: qname_str(&tq),
+                        })?;
+                    if t.has_tag_name((XSD_NS, "simpleType")) {
+                        return Ok((leaf_from_simple_type(t, el), vec![], None));
+                    }
+                    if depth >= DEPTH_CAP || path_types.contains(&key) {
+                        return Ok((NodeKind::Any, vec![], Some(RECURSIVE_DOC.to_string())));
+                    }
+                    path_types.push(key);
+                    let kind = self.walk_complex(t, path_types, depth + 1)?;
+                    path_types.pop();
+                    let attrs = self.collect_all_attributes(t, depth);
+                    let marker = matches!(kind, NodeKind::Any).then(|| UNSUPPORTED_DOC.to_string());
+                    Ok((kind, attrs, marker))
+                }
+                None => Ok((
+                    NodeKind::Leaf {
+                        xsd_type: XsdType::String,
+                        enum_values: vec![],
+                        default: el.attribute("default").map(str::to_string),
+                        fixed: el.attribute("fixed").map(str::to_string),
+                    },
+                    vec![],
+                    None,
+                )),
+            },
+        }
+    }
+
+    fn walk_complex(
+        &self,
+        t: Node<'a, 'a>,
+        path_types: &mut Vec<(String, String)>,
+        depth: usize,
+    ) -> Result<NodeKind, WsdlError> {
+        if t.children().any(|c| {
+            c.has_tag_name((XSD_NS, "group")) || c.has_tag_name((XSD_NS, "attributeGroup"))
+        }) && !t.children().any(|c| {
+            c.has_tag_name((XSD_NS, "sequence"))
+                || c.has_tag_name((XSD_NS, "choice"))
+                || c.has_tag_name((XSD_NS, "all"))
+                || c.has_tag_name((XSD_NS, "complexContent"))
+                || c.has_tag_name((XSD_NS, "simpleContent"))
+        }) {
+            return Ok(NodeKind::Any); // marker stamped by caller (walk_element)
+        }
+        if let Some(content) = t.children().find(|c| {
+            c.has_tag_name((XSD_NS, "complexContent")) || c.has_tag_name((XSD_NS, "simpleContent"))
+        }) {
+            return self.walk_derived_content(content, path_types, depth);
+        }
+        for child in t.children().filter(Node::is_element) {
+            if child.has_tag_name((XSD_NS, "sequence")) || child.has_tag_name((XSD_NS, "all")) {
+                return Ok(NodeKind::Sequence(
+                    self.walk_particle(child, path_types, depth)?,
+                ));
+            }
+            if child.has_tag_name((XSD_NS, "choice")) {
+                return Ok(NodeKind::Choice(
+                    self.walk_particle(child, path_types, depth)?,
+                ));
+            }
+        }
+        Ok(NodeKind::Sequence(vec![]))
+    }
+
+    /// complexContent/simpleContent extension|restriction: merge base then derived.
+    fn walk_derived_content(
+        &self,
+        content: Node<'a, 'a>,
+        path_types: &mut Vec<(String, String)>,
+        depth: usize,
+    ) -> Result<NodeKind, WsdlError> {
+        let deriv = content.children().find(|c| {
+            c.has_tag_name((XSD_NS, "extension")) || c.has_tag_name((XSD_NS, "restriction"))
+        });
+        let Some(deriv) = deriv else {
+            return Ok(NodeKind::Sequence(vec![]));
+        };
+
+        // simpleContent: the element carries a scalar text value (+ attributes),
+        // not a particle. Resolve the value type from the extension/restriction base.
+        if content.has_tag_name((XSD_NS, "simpleContent")) {
+            if let Some(base_ref) = deriv.attribute("base") {
+                let bq = resolve_ref(deriv, base_ref);
+                if bq.namespace == XSD_NS {
+                    return Ok(NodeKind::Leaf {
+                        xsd_type: map_xsd_type(&bq.local),
+                        enum_values: enumeration_values(deriv),
+                        default: None,
+                        fixed: None,
+                    });
+                }
+                let key = (bq.namespace.clone(), bq.local.clone());
+                if depth < DEPTH_CAP && !path_types.contains(&key) {
+                    if let Some(base_t) = self.named_type(&bq) {
+                        if base_t.has_tag_name((XSD_NS, "simpleType")) {
+                            return Ok(leaf_from_simple_type(base_t, content));
+                        }
+                        // base is another complexType with simpleContent: recurse,
+                        // guarded against cyclic base chains like the complexContent path.
+                        if let Some(inner) = base_t
+                            .children()
+                            .find(|c| c.has_tag_name((XSD_NS, "simpleContent")))
+                        {
+                            path_types.push(key);
+                            let kind = self.walk_derived_content(inner, path_types, depth + 1)?;
+                            path_types.pop();
+                            return Ok(kind);
+                        }
+                    }
+                }
+            }
+            // Unresolvable simpleContent value type: fall back to a string leaf.
+            return Ok(NodeKind::Leaf {
+                xsd_type: XsdType::String,
+                enum_values: vec![],
+                default: None,
+                fixed: None,
+            });
+        }
+
+        let mut children = Vec::new();
+        // Base children first.
+        if let Some(base_ref) = deriv.attribute("base") {
+            let bq = resolve_ref(deriv, base_ref);
+            if bq.namespace != XSD_NS {
+                let key = (bq.namespace.clone(), bq.local.clone());
+                if depth < DEPTH_CAP && !path_types.contains(&key) {
+                    if let Some(base_t) = self.named_type(&bq) {
+                        path_types.push(key);
+                        if let NodeKind::Sequence(base_children) =
+                            self.walk_complex(base_t, path_types, depth + 1)?
+                        {
+                            children.extend(base_children);
+                        }
+                        path_types.pop();
+                    }
+                }
+            }
+        }
+        // Derived particle appended.
+        for child in deriv.children().filter(Node::is_element) {
+            if child.has_tag_name((XSD_NS, "sequence")) || child.has_tag_name((XSD_NS, "all")) {
+                children.extend(self.walk_particle(child, path_types, depth)?);
+            } else if child.has_tag_name((XSD_NS, "choice")) {
+                // A choice inside an extension stays a nested Choice branch group.
+                let branches = self.walk_particle(child, path_types, depth)?;
+                children.push(SchemaNode {
+                    name: String::new(),
+                    namespace: None,
+                    occurs: Occurs {
+                        min: 1,
+                        max: MaxOccurs::Bounded(1),
+                    },
+                    nillable: false,
+                    doc: None,
+                    attributes: vec![],
+                    kind: NodeKind::Choice(branches),
+                });
+            }
+        }
+        Ok(NodeKind::Sequence(children))
+    }
+
+    fn walk_particle(
+        &self,
+        particle: Node<'a, 'a>,
+        path_types: &mut Vec<(String, String)>,
+        depth: usize,
+    ) -> Result<Vec<SchemaNode>, WsdlError> {
+        let mut out = Vec::new();
+        for child in particle.children().filter(Node::is_element) {
+            if child.has_tag_name((XSD_NS, "any")) {
+                out.push(any_node("", None));
+                continue;
+            }
+            if child.has_tag_name((XSD_NS, "group")) {
+                out.push(any_node("", Some(UNSUPPORTED_DOC)));
+                continue;
+            }
+            if !child.has_tag_name((XSD_NS, "element")) {
+                continue;
+            }
+            let resolved = match child.attribute("ref") {
+                Some(r) => {
+                    let q = resolve_ref(child, r);
+                    self.element(&q).ok_or_else(|| WsdlError::ElementNotFound {
+                        qname: qname_str(&q),
+                    })?
+                }
+                None => child,
+            };
+            out.push(self.walk_element(resolved, path_types, depth)?);
+        }
+        Ok(out)
+    }
+
+    fn collect_all_attributes(&self, t: Node<'a, 'a>, depth: usize) -> Vec<Attribute> {
+        let mut attrs = collect_attributes(t);
+        if depth >= DEPTH_CAP {
+            return attrs;
+        }
+        if let Some(content) = t.children().find(|c| {
+            c.has_tag_name((XSD_NS, "complexContent")) || c.has_tag_name((XSD_NS, "simpleContent"))
+        }) {
+            if let Some(deriv) = content.children().find(|c| {
+                c.has_tag_name((XSD_NS, "extension")) || c.has_tag_name((XSD_NS, "restriction"))
+            }) {
+                attrs.extend(collect_attributes(deriv));
+                if let Some(base_ref) = deriv.attribute("base") {
+                    let bq = resolve_ref(deriv, base_ref);
+                    if bq.namespace != XSD_NS {
+                        if let Some(base_t) = self.named_type(&bq) {
+                            attrs.extend(self.collect_all_attributes(base_t, depth + 1));
+                        }
+                    }
+                }
+            }
+        }
+        attrs
+    }
+}
+
+fn read_occurs(el: Node) -> Occurs {
+    let min = el
+        .attribute("minOccurs")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    let max = match el.attribute("maxOccurs") {
+        Some("unbounded") => MaxOccurs::Unbounded,
+        Some(v) => MaxOccurs::Bounded(v.parse().unwrap_or(1)),
+        None => MaxOccurs::Bounded(1),
+    };
+    Occurs { min, max }
+}
+
+fn read_doc(el: Node) -> Option<String> {
+    el.children()
+        .find(|c| c.has_tag_name((XSD_NS, "annotation")))
+        .and_then(|a| {
+            a.children()
+                .find(|c| c.has_tag_name((XSD_NS, "documentation")))
+        })
+        .and_then(|d| d.text())
+        .map(|t| t.trim().to_string())
+}
+
+fn schema_tns(node: Node) -> Option<String> {
+    node.ancestors()
+        .find(|n| n.has_tag_name((XSD_NS, "schema")))
+        .and_then(|s| s.attribute("targetNamespace"))
+        .map(str::to_string)
+}
+
+fn resolve_ref(node: Node, value: &str) -> QName {
+    let (prefix, local) = match value.split_once(':') {
+        Some((p, l)) => (Some(p), l),
+        None => (None, value),
+    };
+    QName {
+        namespace: node
+            .lookup_namespace_uri(prefix)
+            .unwrap_or_default()
+            .to_string(),
+        local: local.to_string(),
+    }
+}
+
+fn leaf_from_builtin(tq: &QName, el: Node) -> NodeKind {
+    NodeKind::Leaf {
+        xsd_type: map_xsd_type(&tq.local),
+        enum_values: vec![],
+        default: el.attribute("default").map(str::to_string),
+        fixed: el.attribute("fixed").map(str::to_string),
+    }
+}
+
+fn leaf_from_simple_type(t: Node, el: Node) -> NodeKind {
+    let restriction = t
+        .children()
+        .find(|c| c.has_tag_name((XSD_NS, "restriction")));
+    let base_local = restriction
+        .and_then(|r| r.attribute("base"))
+        .map(|b| b.rsplit(':').next().unwrap_or(b).to_string())
+        .unwrap_or_else(|| "string".into());
+    let enum_values = restriction.map(enumeration_values).unwrap_or_default();
+    NodeKind::Leaf {
+        xsd_type: map_xsd_type(&base_local),
+        enum_values,
+        default: el.attribute("default").map(str::to_string),
+        fixed: el.attribute("fixed").map(str::to_string),
+    }
+}
+
+/// Collects `xs:enumeration` values directly under `container` (a
+/// `restriction` element). Returns empty for containers without any
+/// (e.g. an `extension`, which has no enumerations).
+fn enumeration_values(container: Node) -> Vec<String> {
+    container
+        .children()
+        .filter(|c| c.has_tag_name((XSD_NS, "enumeration")))
+        .filter_map(|e| e.attribute("value").map(str::to_string))
+        .collect()
+}
+
+fn collect_attributes(container: Node) -> Vec<Attribute> {
+    container
+        .children()
+        .filter(|c| c.has_tag_name((XSD_NS, "attribute")))
+        .filter_map(|a| {
+            let name = a.attribute("name")?.to_string();
+            let type_local = a
+                .attribute("type")
+                .map(|t| t.rsplit(':').next().unwrap_or(t))
+                .unwrap_or("string");
+            Some(Attribute {
+                name,
+                xsd_type: map_xsd_type(type_local),
+                required: a.attribute("use") == Some("required"),
+                enum_values: vec![],
+                default: a.attribute("default").map(str::to_string),
+            })
+        })
+        .collect()
+}
+
+fn any_node(name: &str, doc: Option<&str>) -> SchemaNode {
+    SchemaNode {
+        name: name.to_string(),
+        namespace: None,
+        occurs: Occurs {
+            min: 1,
+            max: MaxOccurs::Bounded(1),
+        },
+        nillable: false,
+        doc: doc.map(str::to_string),
+        attributes: vec![],
+        kind: NodeKind::Any,
+    }
+}
+
+fn map_xsd_type(local: &str) -> XsdType {
+    match local {
+        "string" => XsdType::String,
+        "boolean" => XsdType::Boolean,
+        "integer" | "int" | "long" | "short" | "byte" => XsdType::Integer,
+        "decimal" => XsdType::Decimal,
+        "double" | "float" => XsdType::Double,
+        "date" => XsdType::Date,
+        "dateTime" => XsdType::DateTime,
+        "time" => XsdType::Time,
+        "gYearMonth" => XsdType::GYearMonth,
+        "base64Binary" => XsdType::Base64Binary,
+        other => XsdType::Other(other.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wsdl::resolve::ResolvedDoc;
+
+    fn set_from(xml: &str) -> SchemaSet {
+        SchemaSet {
+            docs: vec![ResolvedDoc {
+                url: "mem://root".into(),
+                xml: xml.into(),
+            }],
+        }
+    }
+
+    #[test]
+    fn add_operation_is_sequence_of_two_int_leaves() {
+        let set = set_from(include_str!("testdata/calculator.wsdl"));
+        let root = QName {
+            namespace: "http://example.com/calc".into(),
+            local: "Add".into(),
+        };
+        let node = build_schema(&set, &root).unwrap();
+        let NodeKind::Sequence(children) = &node.kind else {
+            panic!("expected Sequence, got {:?}", node.kind)
+        };
+        assert_eq!(children.len(), 2);
+        assert_eq!(children[0].name, "a");
+        assert!(matches!(
+            children[0].kind,
+            NodeKind::Leaf {
+                xsd_type: XsdType::Integer,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn missing_element_errors() {
+        let set = set_from(include_str!("testdata/calculator.wsdl"));
+        let root = QName {
+            namespace: "http://example.com/calc".into(),
+            local: "Nope".into(),
+        };
+        assert!(matches!(
+            build_schema(&set, &root),
+            Err(WsdlError::ElementNotFound { .. })
+        ));
+    }
+
+    #[test]
+    fn fields_enum_occurs_nillable_default_attributes() {
+        let set = set_from(include_str!("testdata/fields.xsd"));
+        let root = QName {
+            namespace: "http://ex/fields".into(),
+            local: "Order".into(),
+        };
+        let node = build_schema(&set, &root).unwrap();
+        let NodeKind::Sequence(children) = &node.kind else {
+            panic!()
+        };
+
+        let status = &children[0];
+        let NodeKind::Leaf { enum_values, .. } = &status.kind else {
+            panic!()
+        };
+        assert_eq!(enum_values, &vec!["NEW".to_string(), "PAID".to_string()]);
+
+        let note = &children[1];
+        assert!(note.occurs.optional());
+        assert!(note.nillable);
+
+        let qty = &children[2];
+        assert!(qty.occurs.repeatable());
+
+        let channel = &children[3];
+        let NodeKind::Leaf { default, .. } = &channel.kind else {
+            panic!()
+        };
+        assert_eq!(default.as_deref(), Some("web"));
+
+        assert_eq!(node.attributes.len(), 1);
+        assert_eq!(node.attributes[0].name, "id");
+        assert!(node.attributes[0].required);
+    }
+
+    #[test]
+    fn choice_becomes_choice() {
+        let set = set_from(include_str!("testdata/choice_ref.xsd"));
+        let root = QName {
+            namespace: "http://ex/cr".into(),
+            local: "Pay".into(),
+        };
+        let node = build_schema(&set, &root).unwrap();
+        let NodeKind::Choice(branches) = &node.kind else {
+            panic!("{:?}", node.kind)
+        };
+        assert_eq!(branches.len(), 2);
+        assert_eq!(branches[0].name, "card");
+    }
+
+    #[test]
+    fn all_becomes_sequence_and_ref_resolves() {
+        let set = set_from(include_str!("testdata/choice_ref.xsd"));
+        let root = QName {
+            namespace: "http://ex/cr".into(),
+            local: "Addr".into(),
+        };
+        let node = build_schema(&set, &root).unwrap();
+        let NodeKind::Sequence(children) = &node.kind else {
+            panic!("{:?}", node.kind)
+        };
+        assert_eq!(children.len(), 2);
+        assert_eq!(children[0].name, "City"); // resolved from ref
+        assert!(matches!(
+            children[0].kind,
+            NodeKind::Leaf {
+                xsd_type: XsdType::String,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn extension_flattens_base_then_derived() {
+        let set = set_from(include_str!("testdata/inherit.xsd"));
+        let root = QName {
+            namespace: "http://ex/inh".into(),
+            local: "Derived".into(),
+        };
+        let node = build_schema(&set, &root).unwrap();
+        let NodeKind::Sequence(children) = &node.kind else {
+            panic!("{:?}", node.kind)
+        };
+        let names: Vec<&str> = children.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, vec!["id", "extra"]); // base first, then derived
+        assert!(node.attributes.iter().any(|a| a.name == "version"));
+    }
+
+    fn first_leaf_or_any(node: &SchemaNode) -> &NodeKind {
+        &node.kind
+    }
+
+    #[test]
+    fn xs_any_becomes_any() {
+        let set = set_from(include_str!("testdata/fallbacks.xsd"));
+        let root = QName {
+            namespace: "http://ex/fb".into(),
+            local: "WithAny".into(),
+        };
+        let node = build_schema(&set, &root).unwrap();
+        let NodeKind::Sequence(children) = &node.kind else {
+            panic!()
+        };
+        assert!(matches!(children[0].kind, NodeKind::Any));
+    }
+
+    #[test]
+    fn group_ref_is_marked_any() {
+        let set = set_from(include_str!("testdata/fallbacks.xsd"));
+        let root = QName {
+            namespace: "http://ex/fb".into(),
+            local: "WithGroup".into(),
+        };
+        let node = build_schema(&set, &root).unwrap();
+        assert!(matches!(node.kind, NodeKind::Any));
+        assert_eq!(node.doc.as_deref(), Some("unsupported: edit raw"));
+    }
+
+    #[test]
+    fn recursive_type_terminates_with_marker() {
+        let set = set_from(include_str!("testdata/fallbacks.xsd"));
+        let root = QName {
+            namespace: "http://ex/fb".into(),
+            local: "Recursive".into(),
+        };
+        let node = build_schema(&set, &root).unwrap(); // must not stack-overflow
+                                                       // Walk down `next` until the guard emits an Any marked "recursive...".
+        fn find_recursive(n: &SchemaNode) -> bool {
+            if matches!(n.kind, NodeKind::Any)
+                && n.doc.as_deref() == Some("recursive: expand on demand")
+            {
+                return true;
+            }
+            match &n.kind {
+                NodeKind::Sequence(c) | NodeKind::Choice(c) => c.iter().any(find_recursive),
+                _ => false,
+            }
+        }
+        assert!(find_recursive(&node));
+        let _ = first_leaf_or_any(&node);
+    }
+
+    #[test]
+    fn cyclic_extension_terminates() {
+        let set = set_from(include_str!("testdata/cyclic_extension.xsd"));
+        let root = QName {
+            namespace: "http://ex/cyc".into(),
+            local: "Root".into(),
+        };
+        // Must not stack-overflow; the cycle guard truncates the base merge.
+        let node = build_schema(&set, &root).unwrap();
+        assert_eq!(node.name, "Root");
+    }
+
+    #[test]
+    fn simple_content_is_leaf_with_attributes() {
+        let set = set_from(include_str!("testdata/simple_content.xsd"));
+        let root = QName {
+            namespace: "http://ex/sc".into(),
+            local: "Amount".into(),
+        };
+        let node = build_schema(&set, &root).unwrap();
+        assert!(
+            matches!(
+                node.kind,
+                NodeKind::Leaf {
+                    xsd_type: XsdType::Decimal,
+                    ..
+                }
+            ),
+            "expected decimal Leaf, got {:?}",
+            node.kind
+        );
+        assert!(node
+            .attributes
+            .iter()
+            .any(|a| a.name == "currency" && a.required));
+    }
+
+    #[test]
+    fn cyclic_simple_content_terminates() {
+        let set = set_from(include_str!("testdata/cyclic_simple_content.xsd"));
+        let root = QName {
+            namespace: "http://ex/csc".into(),
+            local: "Root".into(),
+        };
+        // Must not stack-overflow; the cycle guard falls back to a string leaf.
+        let node = build_schema(&set, &root).unwrap();
+        assert!(
+            matches!(node.kind, NodeKind::Leaf { .. }),
+            "{:?}",
+            node.kind
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_then_build_end_to_end() {
+        let root_url = "mem://calc.wsdl";
+        let root_xml = include_str!("testdata/calculator.wsdl");
+        let fetch = |_u: String| async move { Ok::<String, String>(String::new()) };
+        let set = crate::wsdl::resolve::resolve(root_url, root_xml, fetch)
+            .await
+            .unwrap();
+        let root = QName {
+            namespace: "http://example.com/calc".into(),
+            local: "Add".into(),
+        };
+        let node = build_schema(&set, &root).unwrap();
+        let json = serde_json::to_string(&node).unwrap();
+        assert!(json.contains("\"name\":\"Add\""), "got: {json}");
+    }
+}

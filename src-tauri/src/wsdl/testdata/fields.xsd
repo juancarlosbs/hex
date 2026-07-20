@@ -1,0 +1,21 @@
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           targetNamespace="http://ex/fields">
+  <xs:element name="Order">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="status">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="NEW"/>
+              <xs:enumeration value="PAID"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:element>
+        <xs:element name="note" type="xs:string" minOccurs="0" nillable="true"/>
+        <xs:element name="qty" type="xs:int" minOccurs="1" maxOccurs="unbounded"/>
+        <xs:element name="channel" type="xs:string" default="web"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

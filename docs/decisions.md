@@ -92,7 +92,7 @@ Format: **Status** (Accepted / Proposed / Superseded) · Context · Decision · 
 
 ## ADR-007 — Typed IPC bridge with tauri-specta (pin `=` during RC)
 
-**Status**: Accepted
+**Status**: Accepted — ⚠️ **not yet wired (as of 2026-07-18)**. The `specta`/`tauri-specta` crates are **not in `Cargo.toml`**, no type derives `specta::Type`, `lib.rs` uses `tauri::generate_handler!` (not `tauri_specta::Builder`), and `src/bindings.ts` **does not exist**. The frontend currently uses **hand-written types in `src/lib/api.ts`** with bare `invoke()` — the exact drift this ADR exists to prevent. **TODO (own slice):** add the pinned crates, derive `specta::Type` on IPC types (`OperationRef`, `QName`, `SchemaNode`, …), wire the builder export, and replace `api.ts` hand-written types with `bindings.ts`. Until then, new IPC types derive only `Serialize, Deserialize` (matching `domain/wsdl.rs`).
 
 **Context**: The Rust↔TS boundary is where silent bugs are born (diverging payloads). We want changing a command to break the frontend at compile-time.
 

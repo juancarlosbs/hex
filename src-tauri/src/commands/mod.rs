@@ -120,21 +120,27 @@ pub struct WsdlImportPreview {
     pub operations: Vec<OperationRef>,
 }
 
-#[tauri::command]
-pub async fn import_wsdl(url: String) -> Result<WsdlImportPreview, String> {
-    let client = reqwest::Client::builder()
+fn http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())
+}
+
+async fn fetch_text(client: &reqwest::Client, url: &str) -> Result<String, String> {
+    let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.text().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn import_wsdl(url: String) -> Result<WsdlImportPreview, String> {
+    let client = http_client()?;
     let fetch = |u: String| {
         let client = client.clone();
-        async move {
-            let resp = client.get(&u).send().await.map_err(|e| e.to_string())?;
-            if !resp.status().is_success() {
-                return Err(format!("HTTP {}", resp.status()));
-            }
-            resp.text().await.map_err(|e| e.to_string())
-        }
+        async move { fetch_text(&client, &u).await }
     };
 
     let xml = fetch(url.clone()).await.map_err(|message| {
@@ -192,4 +198,31 @@ pub fn confirm_wsdl_import(
         .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+use crate::domain::schema::SchemaNode;
+use crate::domain::wsdl::QName;
+
+#[tauri::command]
+pub async fn get_operation_schema(
+    wsdl_url: String,
+    input_element: QName,
+) -> Result<SchemaNode, String> {
+    let client = http_client()?;
+    let fetch = |u: String| {
+        let client = client.clone();
+        async move { fetch_text(&client, &u).await }
+    };
+
+    let root_xml = fetch(wsdl_url.clone()).await.map_err(|message| {
+        wsdl::error::WsdlError::Fetch {
+            url: wsdl_url.clone(),
+            message,
+        }
+        .to_string()
+    })?;
+    let set = wsdl::resolve::resolve(&wsdl_url, &root_xml, fetch)
+        .await
+        .map_err(|e| e.to_string())?;
+    wsdl::xsd::build_schema(&set, &input_element).map_err(|e| e.to_string())
 }

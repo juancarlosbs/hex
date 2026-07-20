@@ -1,0 +1,21 @@
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:tns="http://ex/inh"
+           targetNamespace="http://ex/inh">
+  <xs:complexType name="Base">
+    <xs:sequence>
+      <xs:element name="id" type="xs:string"/>
+    </xs:sequence>
+    <xs:attribute name="version" type="xs:string"/>
+  </xs:complexType>
+  <xs:element name="Derived">
+    <xs:complexType>
+      <xs:complexContent>
+        <xs:extension base="tns:Base">
+          <xs:sequence>
+            <xs:element name="extra" type="xs:int"/>
+          </xs:sequence>
+        </xs:extension>
+      </xs:complexContent>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

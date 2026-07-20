@@ -1,0 +1,20 @@
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:tns="http://ex/fb"
+           targetNamespace="http://ex/fb">
+  <xs:group name="G">
+    <xs:sequence><xs:element name="g1" type="xs:string"/></xs:sequence>
+  </xs:group>
+  <xs:element name="WithAny">
+    <xs:complexType><xs:sequence><xs:any/></xs:sequence></xs:complexType>
+  </xs:element>
+  <xs:element name="WithGroup">
+    <xs:complexType><xs:group ref="tns:G"/></xs:complexType>
+  </xs:element>
+  <xs:complexType name="Node">
+    <xs:sequence>
+      <xs:element name="value" type="xs:string"/>
+      <xs:element name="next" type="tns:Node" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="Recursive" type="tns:Node"/>
+</xs:schema>

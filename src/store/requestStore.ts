@@ -14,6 +14,7 @@ import { api, RequestFileData } from "../lib/api";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useCollectionStore } from "./collectionStore";
 import { useResponseStore } from "./responseStore";
+import { defaultFormValue } from "./soapForm";
 
 interface RequestState {
   openRequests: Record<string, OpenRequest>;
@@ -74,11 +75,31 @@ export const useRequestStore = create<RequestState>((set, get) => ({
         activeId: id,
       };
     });
+
+    const soapMeta = req.soap?.meta;
+    if (soapMeta) {
+      try {
+        const schema = await api.getOperationSchema(soapMeta.wsdlUrl, soapMeta.inputElement);
+        set((s) => {
+          const r = s.openRequests[id];
+          // re-check: the request may have been closed/superseded while the fetch was in flight
+          if (!r || !r.soap) return s;
+          return {
+            openRequests: patch(s.openRequests, id, {
+              soap: { ...r.soap, schema, value: defaultFormValue(schema) },
+            }),
+          };
+        });
+      } catch (e) {
+        console.error("getOperationSchema failed:", e);
+      }
+    }
   },
 
   async saveRequest(id) {
     const r = get().openRequests[id];
     if (!r) return;
+    if (r.soap) return; // SOAP values are not persisted in this slice
     const workspaceId = useWorkspaceStore.getState().activeId;
     try {
       await api.updateRequest(workspaceId, r.path, {
@@ -249,6 +270,20 @@ function fromFile(data: RequestFileData, path: string[]): OpenRequest {
     auth: data.auth ?? { type: "none" },
     path,
     dirty: false,
+    soap:
+      data.kind === "soap"
+        ? {
+            meta: {
+              wsdlUrl: data.wsdlUrl ?? "",
+              inputElement: data.inputElement ?? { namespace: "", local: "" },
+              endpoint: data.endpoint ?? "",
+              soapAction: data.soapAction ?? "",
+              soapVersion: data.soapVersion ?? "1.1",
+            },
+            schema: null,
+            value: { sequence: [] },
+          }
+        : undefined,
   };
 }
 

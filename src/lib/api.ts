@@ -52,6 +52,12 @@ export interface RequestFileData {
   headers?: KeyValue[];
   body?: RestBody;
   auth?: AuthConfig;
+  wsdlUrl?: string;
+  operation?: string;
+  endpoint?: string;
+  soapAction?: string;
+  soapVersion?: "1.1" | "1.2";
+  inputElement?: WsdlQName;
 }
 
 export interface WsdlOperation {

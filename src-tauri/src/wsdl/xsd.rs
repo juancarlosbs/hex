@@ -97,7 +97,7 @@ impl<'a> Index<'a> {
         let doc = marker.or_else(|| read_doc(el));
         Ok(SchemaNode {
             name: el.attribute("name").unwrap_or_default().to_string(),
-            namespace: schema_tns(el),
+            namespace: element_namespace(el),
             occurs,
             nillable,
             doc,
@@ -385,6 +385,25 @@ fn schema_tns(node: Node) -> Option<String> {
         .find(|n| n.has_tag_name((XSD_NS, "schema")))
         .and_then(|s| s.attribute("targetNamespace"))
         .map(str::to_string)
+}
+
+/// An element's effective namespace: global elements (direct schema children,
+/// including ones reached via `ref`) are always qualified; local elements are
+/// qualified only when their enclosing schema declares `elementFormDefault="qualified"`
+/// (XSD default is "unqualified" => no namespace).
+fn element_namespace(el: Node) -> Option<String> {
+    let is_global = el
+        .parent()
+        .is_some_and(|p| p.has_tag_name((XSD_NS, "schema")));
+    let qualified = el
+        .ancestors()
+        .find(|n| n.has_tag_name((XSD_NS, "schema")))
+        .is_some_and(|s| s.attribute("elementFormDefault") == Some("qualified"));
+    if is_global || qualified {
+        schema_tns(el)
+    } else {
+        None
+    }
 }
 
 fn resolve_ref(node: Node, value: &str) -> QName {
@@ -733,6 +752,54 @@ mod tests {
             "{:?}",
             node.kind
         );
+    }
+
+    #[test]
+    fn local_element_unqualified_has_no_namespace() {
+        // elementFormDefault absent => XSD default "unqualified": nested locals get no namespace,
+        // the global root keeps the tns.
+        let xsd = r#"<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+            targetNamespace="http://ex.com/t" xmlns:t="http://ex.com/t">
+          <xsd:element name="Order">
+            <xsd:complexType><xsd:sequence>
+              <xsd:element name="id" type="xsd:string"/>
+            </xsd:sequence></xsd:complexType>
+          </xsd:element>
+        </xsd:schema>"#;
+        let set = set_from(xsd);
+        let root = QName {
+            namespace: "http://ex.com/t".into(),
+            local: "Order".into(),
+        };
+        let node = build_schema(&set, &root).unwrap();
+        assert_eq!(node.namespace.as_deref(), Some("http://ex.com/t")); // global root: qualified
+        let NodeKind::Sequence(children) = &node.kind else {
+            panic!()
+        };
+        assert_eq!(children[0].namespace, None); // local child: unqualified
+    }
+
+    #[test]
+    fn local_element_qualified_keeps_namespace() {
+        let xsd = r#"<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+            elementFormDefault="qualified"
+            targetNamespace="http://ex.com/t" xmlns:t="http://ex.com/t">
+          <xsd:element name="Order">
+            <xsd:complexType><xsd:sequence>
+              <xsd:element name="id" type="xsd:string"/>
+            </xsd:sequence></xsd:complexType>
+          </xsd:element>
+        </xsd:schema>"#;
+        let set = set_from(xsd);
+        let root = QName {
+            namespace: "http://ex.com/t".into(),
+            local: "Order".into(),
+        };
+        let node = build_schema(&set, &root).unwrap();
+        let NodeKind::Sequence(children) = &node.kind else {
+            panic!()
+        };
+        assert_eq!(children[0].namespace.as_deref(), Some("http://ex.com/t"));
     }
 
     #[tokio::test]

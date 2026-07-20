@@ -3,6 +3,7 @@ import { Loader2, CircleAlert } from "lucide-react";
 import { ResponseBodyView as BodyViewKind, ResponseTab } from "../../lib/response-types";
 import { ResponsePlaceholder } from "./ResponsePlaceholder";
 import { ResponseStatusBar } from "./ResponseStatusBar";
+import { SoapFaultBanner } from "./SoapFaultBanner";
 import { ResponseTabsStrip } from "./ResponseTabsStrip";
 import { ResponseFilterBar } from "./ResponseFilterBar";
 import { ResponseBodyView as BodyView } from "./body/ResponseBodyView";
@@ -25,7 +26,7 @@ export function ResponsePanel() {
 
   return (
     <aside className="flex flex-col h-full bg-card border-l border-border">
-      <ResponseStatusBar response={response} />
+      {response.fault ? <SoapFaultBanner fault={response.fault} /> : <ResponseStatusBar response={response} />}
       <ResponseTabsStrip activeTab={activeTab} onTabChange={setActiveTab} />
       {activeTab === "body" && (
         <>

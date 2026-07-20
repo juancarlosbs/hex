@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../lib/api", () => ({
-  api: { sendRequest: vi.fn() },
+  api: { sendRequest: vi.fn(), sendSoap: vi.fn() },
 }));
 
 import { useResponseStore } from "./responseStore";
@@ -87,6 +87,26 @@ describe("send", () => {
     );
     // store body untouched
     expect(req.body.json).toBe('{"a":1}');
+  });
+
+  it("calls sendSoap with the meta + value when the request is a SOAP operation", async () => {
+    vi.mocked(api.sendSoap).mockResolvedValue(RESP);
+    const req = request();
+    req.soap = {
+      meta: {
+        wsdlUrl: "https://example.com/service?wsdl",
+        inputElement: { namespace: "ns", local: "Op" },
+        endpoint: "https://example.com/service",
+        soapAction: "urn:Op",
+        soapVersion: "1.1",
+      },
+      schema: null,
+      value: { leaf: null },
+    };
+    await useResponseStore.getState().send(req);
+    expect(api.sendSoap).toHaveBeenCalledWith({ ...req.soap.meta, value: req.soap.value });
+    expect(api.sendRequest).not.toHaveBeenCalled();
+    expect(useResponseStore.getState().responses.r1).toEqual({ state: "done", response: RESP });
   });
 });
 

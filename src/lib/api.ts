@@ -68,6 +68,53 @@ export interface WsdlImportPreview {
   operations: WsdlOperation[];
 }
 
+export type MaxOccurs = { bounded: number } | "unbounded";
+export interface Occurs {
+  min: number;
+  max: MaxOccurs;
+}
+export type XsdType =
+  | "string"
+  | "boolean"
+  | "integer"
+  | "decimal"
+  | "double"
+  | "date"
+  | "dateTime"
+  | "time"
+  | "gYearMonth"
+  | "base64Binary"
+  | { other: string };
+export interface Attribute {
+  name: string;
+  xsdType: XsdType;
+  required: boolean;
+  enumValues: string[];
+  default: string | null;
+}
+export type NodeKind =
+  | { leaf: { xsdType: XsdType; enumValues: string[]; default: string | null; fixed: string | null } }
+  | { sequence: SchemaNode[] }
+  | { choice: SchemaNode[] }
+  | "any";
+export interface SchemaNode {
+  name: string;
+  namespace: string | null;
+  occurs: Occurs;
+  nillable: boolean;
+  doc: string | null;
+  attributes: Attribute[];
+  kind: NodeKind;
+}
+export type FormValue =
+  | { leaf: string | null }
+  | { sequence: FormValue[] }
+  | { choice: { branch: number; value: FormValue } }
+  | { repeated: FormValue[] }
+  | "nil"
+  | "omitted"
+  | { raw: string };
+
 export const api = {
   listCollections: (workspaceId: string) =>
     invoke<CollectionNode[]>("list_collections", { workspaceId }),
@@ -104,4 +151,16 @@ export const api = {
 
   confirmWsdlImport: (workspaceId: string, preview: WsdlImportPreview) =>
     invoke<void>("confirm_wsdl_import", { workspaceId, preview }),
+
+  getOperationSchema: (wsdlUrl: string, inputElement: WsdlQName) =>
+    invoke<SchemaNode>("get_operation_schema", { wsdlUrl, inputElement }),
+
+  sendSoap: (spec: {
+    wsdlUrl: string;
+    inputElement: WsdlQName;
+    endpoint: string;
+    soapAction: string;
+    soapVersion: string;
+    value: FormValue;
+  }) => invoke<HttpResponse>("send_soap", spec),
 };

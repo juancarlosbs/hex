@@ -23,6 +23,7 @@ pub fn run() {
             commands::import_wsdl,
             commands::confirm_wsdl_import,
             commands::get_operation_schema,
+            commands::send_soap,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

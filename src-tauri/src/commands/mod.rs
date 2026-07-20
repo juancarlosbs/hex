@@ -226,3 +226,39 @@ pub async fn get_operation_schema(
         .map_err(|e| e.to_string())?;
     wsdl::xsd::build_schema(&set, &input_element).map_err(|e| e.to_string())
 }
+
+use crate::domain::value::FormValue;
+use crate::engine;
+
+#[tauri::command]
+pub async fn send_soap(
+    wsdl_url: String,
+    input_element: QName,
+    endpoint: String,
+    soap_action: String,
+    soap_version: String,
+    value: FormValue,
+) -> Result<engine::HttpResponse, String> {
+    let client = http_client()?;
+    let fetch = |u: String| {
+        let client = client.clone();
+        async move { fetch_text(&client, &u).await }
+    };
+    let root_xml = fetch(wsdl_url.clone()).await.map_err(|message| {
+        wsdl::error::WsdlError::Fetch {
+            url: wsdl_url.clone(),
+            message,
+        }
+        .to_string()
+    })?;
+    let set = wsdl::resolve::resolve(&wsdl_url, &root_xml, fetch)
+        .await
+        .map_err(|e| e.to_string())?;
+    let schema = wsdl::xsd::build_schema(&set, &input_element).map_err(|e| e.to_string())?;
+
+    let (envelope, meta) =
+        engine::serialize::build_envelope(&schema, &value, &soap_version, &soap_action)
+            .map_err(|e| e.to_string())?;
+
+    engine::send_soap_envelope(&endpoint, envelope, meta).await
+}

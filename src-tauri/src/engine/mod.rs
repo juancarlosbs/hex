@@ -129,13 +129,7 @@ fn build_request(spec: &SendSpec) -> Result<BuiltRequest, String> {
     Ok((spec.method.clone(), url, headers, body))
 }
 
-pub async fn send(spec: SendSpec) -> Result<HttpResponse, String> {
-    let (method, url, headers, body) = build_request(&spec)?;
-
-    let raw = connector::execute(&method, &url, headers, body)
-        .await
-        .map_err(|e| e.to_string())?;
-
+fn to_http_response(raw: connector::RawResponse) -> HttpResponse {
     let mut headers: HashMap<String, String> = HashMap::new();
     for (name, value) in raw.headers {
         headers
@@ -153,7 +147,7 @@ pub async fn send(spec: SendSpec) -> Result<HttpResponse, String> {
         None
     };
 
-    Ok(HttpResponse {
+    HttpResponse {
         status: raw.status,
         status_text: http::StatusCode::from_u16(raw.status)
             .ok()
@@ -166,7 +160,38 @@ pub async fn send(spec: SendSpec) -> Result<HttpResponse, String> {
         body: raw.body,
         timing: raw.timing,
         fault,
-    })
+    }
+}
+
+pub async fn send(spec: SendSpec) -> Result<HttpResponse, String> {
+    let (method, url, headers, body) = build_request(&spec)?;
+
+    let raw = connector::execute(&method, &url, headers, body)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(to_http_response(raw))
+}
+
+/// POSTs a pre-serialized SOAP envelope to `endpoint` using `meta`'s content type
+/// and optional SOAPAction header, mapping the raw response the same way as `send`.
+pub async fn send_soap_envelope(
+    endpoint: &str,
+    envelope: String,
+    meta: serialize::SoapMeta,
+) -> Result<HttpResponse, String> {
+    let url = url::Url::parse(endpoint).map_err(|e| e.to_string())?;
+
+    let mut headers = vec![("Content-Type".to_string(), meta.content_type)];
+    if let Some((name, value)) = meta.soap_action_header {
+        headers.push((name, value));
+    }
+
+    let raw = connector::execute("POST", &url, headers, envelope.into_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(to_http_response(raw))
 }
 
 #[cfg(test)]

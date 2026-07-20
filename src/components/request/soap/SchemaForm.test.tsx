@@ -62,6 +62,17 @@ describe("SchemaForm", () => {
     expect(onChange).toHaveBeenCalledWith("omitted");
   });
 
+  it("toggling an optional+repeatable node on seeds an empty repeated list", () => {
+    const onChange = vi.fn();
+    const optRepeatable: SchemaNode = {
+      name: "tag", namespace: null, occurs: { min: 0, max: "unbounded" }, nillable: false,
+      doc: null, attributes: [], kind: { leaf: { xsdType: "string", enumValues: [], default: null, fixed: null } },
+    };
+    render(<SchemaForm schema={optRepeatable} value={"omitted"} onChange={onChange} />);
+    fireEvent.click(screen.getByLabelText("tag present"));
+    expect(onChange).toHaveBeenCalledWith({ repeated: [] });
+  });
+
   it("repeatable add appends a default item", () => {
     const onChange = vi.fn();
     const repeatableSchema: SchemaNode = {

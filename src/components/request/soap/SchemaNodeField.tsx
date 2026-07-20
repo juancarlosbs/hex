@@ -21,6 +21,14 @@ function isRepeatable(node: SchemaNode): boolean {
  * so toggling a node "on" (optional→present) or "off nil" restores the same
  * shape the store would have seeded had the node not been optional/nil. */
 function presentDefault(node: SchemaNode): FormValue {
+  if (isRepeatable(node)) return { repeated: [] };
+  return kindDefault(node);
+}
+
+/** The default value for one instance of `node`'s kind, ignoring BOTH its
+ * optional and repeatable cardinality — used to seed a single repeated item
+ * (an item is one instance, never itself a list). */
+function kindDefault(node: SchemaNode): FormValue {
   if (node.kind === "any") return { raw: "" };
   if ("leaf" in node.kind) {
     const { default: def, fixed } = node.kind.leaf;
@@ -75,7 +83,7 @@ function RepeatableField({ node, value, onChange, className }: SchemaNodeFieldPr
           type="button"
           aria-label={`add ${node.name}`}
           className="text-[11px] text-muted hover:text-foreground"
-          onClick={() => onChange({ repeated: [...items, presentDefault(node)] })}
+          onClick={() => onChange({ repeated: [...items, kindDefault(node)] })}
         >
           + add
         </button>
@@ -117,7 +125,7 @@ function NillableOrKindField({ node, value, onChange, className }: SchemaNodeFie
           type="checkbox"
           className="w-4 h-4 accent-primary"
           checked={isNil}
-          onChange={(e) => onChange(e.target.checked ? "nil" : presentDefault(node))}
+          onChange={(e) => onChange(e.target.checked ? "nil" : kindDefault(node))}
         />
         nil
       </label>

@@ -1,7 +1,3 @@
-// build_envelope is not wired into engine::client / commands yet (later task); allow
-// dead_code until that call site exists.
-#![allow(dead_code)]
-
 use crate::domain::error::DomainError;
 use crate::domain::schema::{MaxOccurs, NodeKind, SchemaNode};
 use crate::domain::value::FormValue;
@@ -99,9 +95,16 @@ fn write_one(
             let b = branches
                 .get(*branch)
                 .ok_or(DomainError::ValueMismatch { path: path.into() })?;
-            w.write_event(Event::Start(BytesStart::new(&tag))).unwrap();
-            write_node(w, b, value, reg, &format!("{path}/choice"))?;
-            w.write_event(Event::End(BytesEnd::new(&tag))).unwrap();
+            if node.name.is_empty() {
+                // Nameless inline compositor (e.g. a <xs:choice> inside an
+                // <xs:extension>): no wrapper element of its own — write the
+                // chosen branch directly.
+                write_node(w, b, value, reg, &format!("{path}/choice"))?;
+            } else {
+                w.write_event(Event::Start(BytesStart::new(&tag))).unwrap();
+                write_node(w, b, value, reg, &format!("{path}/choice"))?;
+                w.write_event(Event::End(BytesEnd::new(&tag))).unwrap();
+            }
         }
         (NodeKind::Any, FormValue::Raw(xml)) => {
             // insert verbatim (from_escaped: writer emits the bytes as-is, no re-escaping)
@@ -241,5 +244,101 @@ mod tests {
         assert!(meta.content_type.starts_with("application/soap+xml"));
         assert!(meta.content_type.contains("action=\"urn:ping\""));
         assert_eq!(meta.soap_action_header, None);
+    }
+
+    #[test]
+    fn nil_emits_self_closing_tag_with_xsi_nil() {
+        let (xml, _) =
+            build_envelope(&leaf("Note", None), &FormValue::Nil, "1.1", "urn:x").unwrap();
+        assert!(xml.contains(r#"<Note xsi:nil="true"/>"#), "got: {xml}");
+    }
+
+    #[test]
+    fn repeated_emits_one_element_per_item() {
+        let mut item = leaf("Item", None);
+        item.occurs = Occurs {
+            min: 0,
+            max: MaxOccurs::Unbounded,
+        };
+        let value = FormValue::Repeated(vec![
+            FormValue::Leaf(Some("a".into())),
+            FormValue::Leaf(Some("b".into())),
+        ]);
+        let (xml, _) = build_envelope(&item, &value, "1.1", "urn:x").unwrap();
+        assert_eq!(xml.matches("<Item>").count(), 2);
+        assert!(xml.contains("<Item>a</Item>"));
+        assert!(xml.contains("<Item>b</Item>"));
+    }
+
+    #[test]
+    fn named_choice_is_wrapped_in_its_element_tag() {
+        let branches = vec![leaf("CardPayment", None), leaf("CashPayment", None)];
+        let schema = SchemaNode {
+            kind: NodeKind::Choice(branches),
+            ..leaf("Payment", None)
+        };
+        let value = FormValue::Choice {
+            branch: 0,
+            value: Box::new(FormValue::Leaf(Some("visa".into()))),
+        };
+        let (xml, _) = build_envelope(&schema, &value, "1.1", "urn:x").unwrap();
+        assert!(xml.contains("<Payment>"), "got: {xml}");
+        assert!(xml.contains("</Payment>"), "got: {xml}");
+        assert!(xml.contains("<CardPayment>visa</CardPayment>"));
+        assert!(!xml.contains("CashPayment"));
+    }
+
+    #[test]
+    fn nameless_inline_choice_has_no_empty_wrapper_tag() {
+        // Reproduces the xsd.rs walk_derived_content shape: an <xs:choice>
+        // inside an <xs:extension> becomes a nameless Choice node nested in a
+        // Sequence. Before Fix 1 this emitted an invalid <></> wrapper.
+        let branches = vec![leaf("CardPayment", None), leaf("CashPayment", None)];
+        let inline_choice = SchemaNode {
+            name: String::new(),
+            namespace: None,
+            occurs: Occurs {
+                min: 1,
+                max: MaxOccurs::Bounded(1),
+            },
+            nillable: false,
+            doc: None,
+            attributes: vec![],
+            kind: NodeKind::Choice(branches),
+        };
+        let schema = SchemaNode {
+            kind: NodeKind::Sequence(vec![inline_choice]),
+            ..leaf("Root", None)
+        };
+        let value = FormValue::Sequence(vec![FormValue::Choice {
+            branch: 0,
+            value: Box::new(FormValue::Leaf(Some("visa".into()))),
+        }]);
+        let (xml, _) = build_envelope(&schema, &value, "1.1", "urn:x").unwrap();
+        assert!(!xml.contains("<>"), "got: {xml}");
+        assert!(!xml.contains("</>"), "got: {xml}");
+        assert!(
+            xml.contains("<CardPayment>visa</CardPayment>"),
+            "got: {xml}"
+        );
+    }
+
+    #[test]
+    fn raw_inserts_xml_verbatim() {
+        let node = SchemaNode {
+            kind: NodeKind::Any,
+            ..leaf("Extension", None)
+        };
+        let value = FormValue::Raw("<custom>x</custom>".into());
+        let (xml, _) = build_envelope(&node, &value, "1.1", "urn:x").unwrap();
+        assert!(xml.contains("<custom>x</custom>"), "got: {xml}");
+    }
+
+    #[test]
+    fn kind_value_mismatch_returns_error() {
+        let node = leaf("Id", None);
+        let value = FormValue::Sequence(vec![]);
+        let result = build_envelope(&node, &value, "1.1", "urn:x");
+        assert!(matches!(result, Err(DomainError::ValueMismatch { .. })));
     }
 }

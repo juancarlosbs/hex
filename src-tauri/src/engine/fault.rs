@@ -15,7 +15,12 @@ pub fn detect_fault(body: &str) -> Option<SoapFault> {
     let doc = Document::parse(body).ok()?;
     let fault = doc
         .descendants()
-        .find(|n| n.is_element() && n.tag_name().name() == "Fault")?;
+        .find(|n| n.is_element() && n.tag_name().name() == "Body")
+        .and_then(|body_el| {
+            body_el
+                .children()
+                .find(|n| n.is_element() && n.tag_name().name() == "Fault")
+        })?;
 
     let child_text = |local: &str| -> Option<String> {
         fault
@@ -69,6 +74,10 @@ mod tests {
     #[test]
     fn no_fault_on_success() {
         assert!(detect_fault("<a><b>ok</b></a>").is_none());
+    }
+    #[test]
+    fn fault_element_outside_body_is_not_a_fault() {
+        assert!(detect_fault("<data><Fault>x</Fault></data>").is_none());
     }
     #[test]
     fn fault_with_missing_faultstring_still_detected() {

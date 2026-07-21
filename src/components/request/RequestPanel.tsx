@@ -49,10 +49,11 @@ export function RequestPanel() {
           </span>
           <button
             type="button"
+            disabled={!loading && soap.schema === null}
             onClick={() => (loading ? cancel(req.id) : send(req))}
-            className="flex items-center gap-2 px-5 py-[10px] rounded-[6px] bg-primary text-primary-foreground text-[13px] font-semibold cursor-pointer hover:opacity-90"
+            className="flex items-center gap-2 px-5 py-[10px] rounded-[6px] bg-primary text-primary-foreground text-[13px] font-semibold cursor-pointer hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ fontFamily: "var(--font-sans)" }}
-            title={loading ? "Cancel" : "Send (⌘↵)"}
+            title={loading ? "Cancel" : soap.schema === null ? "Loading schema…" : "Send (⌘↵)"}
           >
             {loading ? "Cancel" : "Send"}
             {loading ? <X size={14} /> : <CornerDownLeft size={14} />}

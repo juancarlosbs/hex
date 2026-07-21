@@ -173,8 +173,9 @@ async fn execute_inner(
     let req = build_request(method, url, &host_header, headers, body)?;
 
     let (parts, bytes, ttfb_ms, download_ms, tls_ms) = if https {
+        let cfg = tls_config()?;
         let tls_start = Instant::now();
-        let connector = TlsConnector::from(tls_config()?);
+        let connector = TlsConnector::from(cfg);
         let server_name =
             ServerName::try_from(host.to_string()).map_err(|e| EngineError::Tls(e.to_string()))?;
         let tls_stream = connector

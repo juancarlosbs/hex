@@ -179,6 +179,8 @@ Common types: `feat`, `fix`, `refactor`, `chore`, `docs`, `style`, `test`, `desi
 
 **Branches** follow the pattern `type/short-description` (e.g. `feat/workspace-switcher`, `fix/titlebar-padding`, `chore/update-deps`).
 
+**Worktrees** live in `.worktrees/` (git-ignored). Create isolated worktrees there — e.g. `git worktree add .worktrees/<branch> <branch>`.
+
 <!-- ai-memory:start -->
 ## Long-term memory (ai-memory)
 

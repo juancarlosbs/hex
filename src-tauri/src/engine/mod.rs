@@ -1,7 +1,15 @@
 use crate::persistence::collection::{AuthData, BodyData, KeyValueEntry};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+
+pub mod connector;
+pub mod deserialize;
+pub mod error;
+pub mod fault;
+pub mod serialize;
+
+use connector::TimingBreakdown;
+use fault::SoapFault;
 
 #[derive(Debug, Deserialize)]
 pub struct SendSpec {
@@ -24,110 +32,167 @@ pub struct HttpResponse {
     pub size_bytes: u64,
     pub headers: HashMap<String, String>,
     pub body: String,
+    pub timing: TimingBreakdown,
+    pub fault: Option<SoapFault>,
+}
+
+/// True when a Content-Type header indicates XML/SOAP (fault detection only applies there).
+fn is_xml_content_type(headers: &HashMap<String, String>) -> bool {
+    headers.get("content-type").is_some_and(|ct| {
+        let ct = ct.to_ascii_lowercase();
+        ct.contains("text/xml") || ct.contains("application/soap+xml") || ct.contains("/xml")
+    })
 }
 
 fn enabled(list: &[KeyValueEntry]) -> impl Iterator<Item = &KeyValueEntry> {
     list.iter().filter(|kv| kv.enabled && !kv.key.is_empty())
 }
 
-fn build_request(client: &reqwest::Client, spec: &SendSpec) -> Result<reqwest::Request, String> {
-    let method = reqwest::Method::from_bytes(spec.method.as_bytes())
-        .map_err(|_| format!("invalid method: {}", spec.method))?;
-    let mut rb = client.request(method, &spec.url);
+/// Sets a header, replacing any existing entry with the same name (case-insensitive) —
+/// mirrors `HeaderMap::insert`, used so a user-supplied header always wins over a default.
+fn set_header(headers: &mut Vec<(String, String)>, name: &str, value: String) {
+    headers.retain(|(k, _)| !k.eq_ignore_ascii_case(name));
+    headers.push((name.to_string(), value));
+}
 
-    let query: Vec<(&str, &str)> = enabled(&spec.params)
-        .map(|kv| (kv.key.as_str(), kv.value.as_str()))
-        .collect();
-    if !query.is_empty() {
-        rb = rb.query(&query);
+type BuiltRequest = (String, url::Url, Vec<(String, String)>, Vec<u8>);
+
+fn build_request(spec: &SendSpec) -> Result<BuiltRequest, String> {
+    http::Method::from_bytes(spec.method.as_bytes())
+        .map_err(|_| format!("invalid method: {}", spec.method))?;
+
+    let mut url = url::Url::parse(&spec.url).map_err(|e| e.to_string())?;
+    {
+        let mut pairs = url.query_pairs_mut();
+        for kv in enabled(&spec.params) {
+            pairs.append_pair(&kv.key, &kv.value);
+        }
     }
+
+    let mut headers: Vec<(String, String)> = Vec::new();
 
     match &spec.auth {
         AuthData::None => {}
         AuthData::Basic { username, password } => {
-            rb = rb.basic_auth(username, Some(password));
+            use base64::Engine;
+            let encoded =
+                base64::engine::general_purpose::STANDARD.encode(format!("{username}:{password}"));
+            set_header(&mut headers, "Authorization", format!("Basic {encoded}"));
         }
         AuthData::Bearer { token } => {
-            rb = rb.bearer_auth(token);
+            set_header(&mut headers, "Authorization", format!("Bearer {token}"));
         }
         AuthData::Apikey { key, value, add_to } => {
             if add_to == "query" {
-                rb = rb.query(&[(key.as_str(), value.as_str())]);
+                url.query_pairs_mut().append_pair(key, value);
             } else {
-                rb = rb.header(key, value);
+                set_header(&mut headers, key, value.clone());
             }
         }
     }
 
+    let mut body: Vec<u8> = Vec::new();
     match spec.body.mode.as_str() {
         "json" => {
             if !spec.body.json.is_empty() {
-                // a user Content-Type header always wins: the post-build insert below
+                // a user Content-Type header always wins: the header loop below
                 // replaces this default, so no absence check is needed here
-                rb = rb.header("Content-Type", "application/json");
-                rb = rb.body(spec.body.json.clone());
+                set_header(&mut headers, "Content-Type", "application/json".into());
+                body = spec.body.json.clone().into_bytes();
             }
         }
         "form-urlencoded" => {
             let pairs: Vec<(&str, &str)> = enabled(&spec.body.form)
                 .map(|kv| (kv.key.as_str(), kv.value.as_str()))
                 .collect();
-            rb = rb.form(&pairs);
+            set_header(
+                &mut headers,
+                "Content-Type",
+                "application/x-www-form-urlencoded".into(),
+            );
+            body = url::form_urlencoded::Serializer::new(String::new())
+                .extend_pairs(pairs)
+                .finish()
+                .into_bytes();
         }
         "form-multipart" => return Err("multipart body is not supported yet".into()),
         other => return Err(format!("unknown body mode: {other}")),
     }
 
-    let mut req = rb.build().map_err(|e| e.to_string())?;
     for kv in enabled(&spec.headers) {
-        let name = reqwest::header::HeaderName::from_bytes(kv.key.as_bytes())
+        http::header::HeaderName::from_bytes(kv.key.as_bytes())
             .map_err(|_| format!("invalid header name: {}", kv.key))?;
-        let value = reqwest::header::HeaderValue::from_str(&kv.value)
+        http::header::HeaderValue::from_str(&kv.value)
             .map_err(|_| format!("invalid header value for: {}", kv.key))?;
-        req.headers_mut().insert(name, value);
+        set_header(&mut headers, &kv.key, kv.value.clone());
     }
-    Ok(req)
+
+    Ok((spec.method.clone(), url, headers, body))
+}
+
+fn to_http_response(raw: connector::RawResponse) -> HttpResponse {
+    let mut headers: HashMap<String, String> = HashMap::new();
+    for (name, value) in raw.headers {
+        headers
+            .entry(name)
+            .and_modify(|existing| {
+                existing.push_str(", ");
+                existing.push_str(&value);
+            })
+            .or_insert(value);
+    }
+
+    let fault = if is_xml_content_type(&headers) {
+        fault::detect_fault(&raw.body)
+    } else {
+        None
+    };
+
+    HttpResponse {
+        status: raw.status,
+        status_text: http::StatusCode::from_u16(raw.status)
+            .ok()
+            .and_then(|s| s.canonical_reason())
+            .unwrap_or("")
+            .to_string(),
+        time_ms: raw.timing.total_ms,
+        size_bytes: raw.body.len() as u64,
+        headers,
+        body: raw.body,
+        timing: raw.timing,
+        fault,
+    }
 }
 
 pub async fn send(spec: SendSpec) -> Result<HttpResponse, String> {
-    // ponytail: per-send client, no pooling; shared OnceLock client when reuse matters
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
+    let (method, url, headers, body) = build_request(&spec)?;
+
+    let raw = connector::execute(&method, &url, headers, body)
+        .await
         .map_err(|e| e.to_string())?;
-    let req = build_request(&client, &spec)?;
 
-    let start = Instant::now();
-    let resp = client.execute(req).await.map_err(|e| {
-        if e.is_timeout() {
-            "request timed out after 30s".to_string()
-        } else {
-            e.to_string()
-        }
-    })?;
+    Ok(to_http_response(raw))
+}
 
-    let status = resp.status();
-    let mut headers: HashMap<String, String> = HashMap::new();
-    for (name, value) in resp.headers() {
-        let v = value.to_str().unwrap_or("<binary>").to_string();
-        headers
-            .entry(name.to_string())
-            .and_modify(|existing| {
-                existing.push_str(", ");
-                existing.push_str(&v);
-            })
-            .or_insert(v.clone());
+/// POSTs a pre-serialized SOAP envelope to `endpoint` using `meta`'s content type
+/// and optional SOAPAction header, mapping the raw response the same way as `send`.
+pub async fn send_soap_envelope(
+    endpoint: &str,
+    envelope: String,
+    meta: serialize::SoapMeta,
+) -> Result<HttpResponse, String> {
+    let url = url::Url::parse(endpoint).map_err(|e| e.to_string())?;
+
+    let mut headers = vec![("Content-Type".to_string(), meta.content_type)];
+    if let Some((name, value)) = meta.soap_action_header {
+        headers.push((name, value));
     }
 
-    let body = resp.text().await.map_err(|e| e.to_string())?;
-    Ok(HttpResponse {
-        status: status.as_u16(),
-        status_text: status.canonical_reason().unwrap_or("").to_string(),
-        time_ms: start.elapsed().as_millis() as u64,
-        size_bytes: body.len() as u64,
-        headers,
-        body,
-    })
+    let raw = connector::execute("POST", &url, headers, envelope.into_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(to_http_response(raw))
 }
 
 #[cfg(test)]
@@ -160,16 +225,31 @@ mod tests {
         }
     }
 
-    pub fn build(spec: &SendSpec) -> Result<reqwest::Request, String> {
-        build_request(&reqwest::Client::new(), spec)
+    pub fn build(spec: &SendSpec) -> Result<BuiltRequest, String> {
+        build_request(spec)
+    }
+
+    /// Case-insensitive header lookup, mirroring `HeaderMap::get`.
+    fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+        headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
+    }
+
+    fn header_count(headers: &[(String, String)], name: &str) -> usize {
+        headers
+            .iter()
+            .filter(|(k, _)| k.eq_ignore_ascii_case(name))
+            .count()
     }
 
     #[test]
     fn merges_enabled_params_into_existing_query() {
         let mut s = spec("https://api.dev/items?page=2");
         s.params = vec![kv("q", "witch", true), kv("skip", "me", false)];
-        let req = build(&s).unwrap();
-        assert_eq!(req.url().as_str(), "https://api.dev/items?page=2&q=witch");
+        let (_, url, _, _) = build(&s).unwrap();
+        assert_eq!(url.as_str(), "https://api.dev/items?page=2&q=witch");
     }
 
     #[test]
@@ -188,7 +268,8 @@ mod tests {
     fn sets_method() {
         let mut s = spec("https://api.dev");
         s.method = "DELETE".into();
-        assert_eq!(build(&s).unwrap().method(), &reqwest::Method::DELETE);
+        let (method, _, _, _) = build(&s).unwrap();
+        assert_eq!(method, "DELETE");
     }
 
     #[test]
@@ -198,13 +279,8 @@ mod tests {
             username: "ada".into(),
             password: "pw".into(),
         };
-        let req = build(&s).unwrap();
-        let v = req
-            .headers()
-            .get("authorization")
-            .unwrap()
-            .to_str()
-            .unwrap();
+        let (_, _, headers, _) = build(&s).unwrap();
+        let v = header(&headers, "authorization").unwrap();
         assert!(v.starts_with("Basic "));
     }
 
@@ -214,8 +290,8 @@ mod tests {
         s.auth = AuthData::Bearer {
             token: "tok123".into(),
         };
-        let req = build(&s).unwrap();
-        assert_eq!(req.headers().get("authorization").unwrap(), "Bearer tok123");
+        let (_, _, headers, _) = build(&s).unwrap();
+        assert_eq!(header(&headers, "authorization").unwrap(), "Bearer tok123");
     }
 
     #[test]
@@ -226,8 +302,8 @@ mod tests {
             value: "k1".into(),
             add_to: "header".into(),
         };
-        let req = build(&s).unwrap();
-        assert_eq!(req.headers().get("x-api-key").unwrap(), "k1");
+        let (_, _, headers, _) = build(&s).unwrap();
+        assert_eq!(header(&headers, "x-api-key").unwrap(), "k1");
     }
 
     #[test]
@@ -238,17 +314,17 @@ mod tests {
             value: "k1".into(),
             add_to: "query".into(),
         };
-        let req = build(&s).unwrap();
-        assert_eq!(req.url().as_str(), "https://api.dev/x?api_key=k1");
+        let (_, url, _, _) = build(&s).unwrap();
+        assert_eq!(url.as_str(), "https://api.dev/x?api_key=k1");
     }
 
     #[test]
     fn sets_enabled_headers_and_skips_disabled() {
         let mut s = spec("https://api.dev");
         s.headers = vec![kv("X-Trace", "1", true), kv("X-Off", "no", false)];
-        let req = build(&s).unwrap();
-        assert_eq!(req.headers().get("x-trace").unwrap(), "1");
-        assert!(req.headers().get("x-off").is_none());
+        let (_, _, headers, _) = build(&s).unwrap();
+        assert_eq!(header(&headers, "x-trace").unwrap(), "1");
+        assert!(header(&headers, "x-off").is_none());
     }
 
     #[test]
@@ -258,10 +334,9 @@ mod tests {
             token: "tok".into(),
         };
         s.headers = vec![kv("Authorization", "Custom abc", true)];
-        let req = build(&s).unwrap();
-        let all: Vec<_> = req.headers().get_all("authorization").iter().collect();
-        assert_eq!(all.len(), 1);
-        assert_eq!(all[0], "Custom abc");
+        let (_, _, headers, _) = build(&s).unwrap();
+        assert_eq!(header_count(&headers, "authorization"), 1);
+        assert_eq!(header(&headers, "authorization").unwrap(), "Custom abc");
     }
 
     #[test]
@@ -276,12 +351,11 @@ mod tests {
         let mut s = spec("https://api.dev");
         s.method = "POST".into();
         s.body.json = r#"{"a":1}"#.into();
-        let req = build(&s).unwrap();
+        let (_, _, headers, body) = build(&s).unwrap();
         assert_eq!(
-            req.headers().get("content-type").unwrap(),
+            header(&headers, "content-type").unwrap(),
             "application/json"
         );
-        let body = req.body().unwrap().as_bytes().unwrap();
         assert_eq!(body, br#"{"a":1}"#);
     }
 
@@ -291,19 +365,18 @@ mod tests {
         s.method = "POST".into();
         s.body.json = "<x/>".into();
         s.headers = vec![kv("Content-Type", "application/xml", true)];
-        let req = build(&s).unwrap();
-        let all: Vec<_> = req.headers().get_all("content-type").iter().collect();
-        assert_eq!(all.len(), 1);
-        assert_eq!(all[0], "application/xml");
+        let (_, _, headers, _) = build(&s).unwrap();
+        assert_eq!(header_count(&headers, "content-type"), 1);
+        assert_eq!(header(&headers, "content-type").unwrap(), "application/xml");
     }
 
     #[test]
     fn empty_json_body_sends_no_body() {
         let mut s = spec("https://api.dev");
         s.method = "POST".into();
-        let req = build(&s).unwrap();
-        assert!(req.body().is_none());
-        assert!(req.headers().get("content-type").is_none());
+        let (_, _, headers, body) = build(&s).unwrap();
+        assert!(body.is_empty());
+        assert!(header(&headers, "content-type").is_none());
     }
 
     #[test]
@@ -316,12 +389,11 @@ mod tests {
             kv("b", "x y", true),
             kv("c", "no", false),
         ];
-        let req = build(&s).unwrap();
+        let (_, _, headers, body) = build(&s).unwrap();
         assert_eq!(
-            req.headers().get("content-type").unwrap(),
+            header(&headers, "content-type").unwrap(),
             "application/x-www-form-urlencoded"
         );
-        let body = req.body().unwrap().as_bytes().unwrap();
         assert_eq!(body, b"a=1&b=x+y");
     }
 

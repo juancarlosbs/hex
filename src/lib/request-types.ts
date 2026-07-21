@@ -1,4 +1,5 @@
 // src/lib/request-types.ts
+import type { FormValue, SchemaNode, WsdlQName } from "./api";
 
 export const HTTP_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"] as const;
 export type HttpMethod = (typeof HTTP_METHODS)[number];
@@ -59,6 +60,13 @@ export interface OpenRequest {
   /** collection-tree path to the request file (ids from root to the request) */
   path: string[];
   dirty: boolean;
+  soap?: {
+    meta: { wsdlUrl: string; inputElement: WsdlQName; endpoint: string; soapAction: string; soapVersion: string };
+    schema: SchemaNode | null; // null while loading
+    value: FormValue;
+    /** Hand-edited raw envelope from the XML view. null = derive from the form. */
+    xmlDraft: string | null;
+  };
 }
 
 export function makeEmptyRequest(

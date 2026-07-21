@@ -381,9 +381,7 @@ function SortableRequestItem({
 
   function handleActivate() {
     setActive(node.id);
-    if (node.kind === "rest") {
-      openInStore(node.id, node.name, path);
-    }
+    openInStore(node.id, node.name, path);
   }
 
   function handleContextMenu(e: React.MouseEvent) {

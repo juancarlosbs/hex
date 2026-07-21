@@ -226,3 +226,74 @@ pub async fn get_operation_schema(
         .map_err(|e| e.to_string())?;
     wsdl::xsd::build_schema(&set, &input_element).map_err(|e| e.to_string())
 }
+
+use crate::domain::value::FormValue;
+use crate::engine;
+
+#[tauri::command]
+pub async fn send_soap(
+    wsdl_url: String,
+    input_element: QName,
+    endpoint: String,
+    soap_action: String,
+    soap_version: String,
+    value: FormValue,
+) -> Result<engine::HttpResponse, String> {
+    let client = http_client()?;
+    let fetch = |u: String| {
+        let client = client.clone();
+        async move { fetch_text(&client, &u).await }
+    };
+    let root_xml = fetch(wsdl_url.clone()).await.map_err(|message| {
+        wsdl::error::WsdlError::Fetch {
+            url: wsdl_url.clone(),
+            message,
+        }
+        .to_string()
+    })?;
+    let set = wsdl::resolve::resolve(&wsdl_url, &root_xml, fetch)
+        .await
+        .map_err(|e| e.to_string())?;
+    let schema = wsdl::xsd::build_schema(&set, &input_element).map_err(|e| e.to_string())?;
+
+    let (envelope, meta) =
+        engine::serialize::build_envelope(&schema, &value, &soap_version, &soap_action)
+            .map_err(|e| e.to_string())?;
+
+    engine::send_soap_envelope(&endpoint, envelope, meta).await
+}
+
+/// Serialize the SOAP envelope from the current form value without sending it —
+/// backs the request panel's XML preview. Pure: reuses the loaded schema, no I/O.
+#[tauri::command]
+pub fn build_soap_envelope(
+    schema: SchemaNode,
+    soap_action: String,
+    soap_version: String,
+    value: FormValue,
+) -> Result<String, String> {
+    let (envelope, _meta) =
+        engine::serialize::build_envelope(&schema, &value, &soap_version, &soap_action)
+            .map_err(|e| e.to_string())?;
+    Ok(envelope)
+}
+
+/// Parse a hand-edited envelope back into form values, guided by the schema.
+/// Errors (non-conforming XML) tell the caller to keep the raw draft instead.
+#[tauri::command]
+pub fn parse_envelope(envelope: String, schema: SchemaNode) -> Result<FormValue, String> {
+    engine::deserialize::parse_envelope(&schema, &envelope).map_err(|e| e.to_string())
+}
+
+/// Send a raw SOAP envelope edited by hand in the XML view, bypassing the form
+/// serializer. Transport metadata still follows the selected SOAP version.
+#[tauri::command]
+pub async fn send_soap_raw(
+    endpoint: String,
+    envelope: String,
+    soap_action: String,
+    soap_version: String,
+) -> Result<engine::HttpResponse, String> {
+    let meta = engine::serialize::soap_meta(&soap_version, &soap_action);
+    engine::send_soap_envelope(&endpoint, envelope, meta).await
+}

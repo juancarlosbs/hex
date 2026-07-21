@@ -10,10 +10,11 @@ import {
   RequestTab,
   makeEmptyRequest,
 } from "../lib/request-types";
-import { api, RequestFileData } from "../lib/api";
+import { api, FormValue, RequestFileData } from "../lib/api";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useCollectionStore } from "./collectionStore";
 import { useResponseStore } from "./responseStore";
+import { defaultFormValue } from "./soapForm";
 
 interface RequestState {
   openRequests: Record<string, OpenRequest>;
@@ -42,6 +43,15 @@ interface RequestState {
   removeFormRow(id: string, rowId: string): void;
 
   setAuth(id: string, auth: AuthConfig): void;
+
+  setSoapValue(id: string, next: FormValue): void;
+  setSoapEndpoint(id: string, endpoint: string): void;
+  setSoapVersion(id: string, soapVersion: string): void;
+  setSoapXmlDraft(id: string, xmlDraft: string | null): void;
+  /** Parse the XML draft back into the form. Returns null on success (form is
+   * source again), or an error message when the XML doesn't conform (draft kept,
+   * request stays in raw mode). */
+  commitSoapXml(id: string): Promise<string | null>;
 }
 
 const uid = () => crypto.randomUUID();
@@ -74,11 +84,31 @@ export const useRequestStore = create<RequestState>((set, get) => ({
         activeId: id,
       };
     });
+
+    const soapMeta = req.soap?.meta;
+    if (soapMeta) {
+      try {
+        const schema = await api.getOperationSchema(soapMeta.wsdlUrl, soapMeta.inputElement);
+        set((s) => {
+          const r = s.openRequests[id];
+          // re-check: the request may have been closed/superseded while the fetch was in flight
+          if (!r || !r.soap) return s;
+          return {
+            openRequests: patch(s.openRequests, id, {
+              soap: { ...r.soap, schema, value: defaultFormValue(schema) },
+            }),
+          };
+        });
+      } catch (e) {
+        console.error("getOperationSchema failed:", e);
+      }
+    }
   },
 
   async saveRequest(id) {
     const r = get().openRequests[id];
     if (!r) return;
+    if (r.soap) return; // SOAP values are not persisted in this slice
     const workspaceId = useWorkspaceStore.getState().activeId;
     try {
       await api.updateRequest(workspaceId, r.path, {
@@ -217,6 +247,63 @@ export const useRequestStore = create<RequestState>((set, get) => ({
   setAuth(id, auth) {
     set((s) => ({ openRequests: patch(s.openRequests, id, { auth, dirty: true }) }));
   },
+
+  setSoapValue(id, next) {
+    set((s) => {
+      const r = s.openRequests[id];
+      if (!r || !r.soap) return s;
+      // Editing the form makes it the source of truth again — drop any XML edits.
+      return {
+        openRequests: patch(s.openRequests, id, {
+          soap: { ...r.soap, value: next, xmlDraft: null },
+        }),
+      };
+    });
+  },
+
+  setSoapXmlDraft(id, xmlDraft) {
+    set((s) => {
+      const r = s.openRequests[id];
+      if (!r || !r.soap) return s;
+      return { openRequests: patch(s.openRequests, id, { soap: { ...r.soap, xmlDraft } }) };
+    });
+  },
+
+  async commitSoapXml(id) {
+    const soap = get().openRequests[id]?.soap;
+    if (!soap || soap.xmlDraft === null || soap.schema === null) return null;
+    try {
+      const value = await api.parseSoapEnvelope({ envelope: soap.xmlDraft, schema: soap.schema });
+      get().setSoapValue(id, value); // clears xmlDraft — form is the source again
+      return null;
+    } catch (e) {
+      return String(e); // keep the draft; request stays in raw mode
+    }
+  },
+
+  setSoapEndpoint(id, endpoint) {
+    set((s) => {
+      const r = s.openRequests[id];
+      if (!r || !r.soap) return s;
+      return {
+        openRequests: patch(s.openRequests, id, {
+          soap: { ...r.soap, meta: { ...r.soap.meta, endpoint } },
+        }),
+      };
+    });
+  },
+
+  setSoapVersion(id, soapVersion) {
+    set((s) => {
+      const r = s.openRequests[id];
+      if (!r || !r.soap) return s;
+      return {
+        openRequests: patch(s.openRequests, id, {
+          soap: { ...r.soap, meta: { ...r.soap.meta, soapVersion } },
+        }),
+      };
+    });
+  },
 }));
 
 function patch(
@@ -249,6 +336,21 @@ function fromFile(data: RequestFileData, path: string[]): OpenRequest {
     auth: data.auth ?? { type: "none" },
     path,
     dirty: false,
+    soap:
+      data.kind === "soap"
+        ? {
+            meta: {
+              wsdlUrl: data.wsdlUrl ?? "",
+              inputElement: data.inputElement ?? { namespace: "", local: "" },
+              endpoint: data.endpoint ?? "",
+              soapAction: data.soapAction ?? "",
+              soapVersion: data.soapVersion ?? "1.1",
+            },
+            schema: null,
+            value: { sequence: [] },
+            xmlDraft: null,
+          }
+        : undefined,
   };
 }
 

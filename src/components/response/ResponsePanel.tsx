@@ -3,9 +3,11 @@ import { Loader2, CircleAlert } from "lucide-react";
 import { ResponseBodyView as BodyViewKind, ResponseTab } from "../../lib/response-types";
 import { ResponsePlaceholder } from "./ResponsePlaceholder";
 import { ResponseStatusBar } from "./ResponseStatusBar";
+import { SoapFaultBanner } from "./SoapFaultBanner";
 import { ResponseTabsStrip } from "./ResponseTabsStrip";
 import { ResponseFilterBar } from "./ResponseFilterBar";
 import { ResponseBodyView as BodyView } from "./body/ResponseBodyView";
+import { Waterfall } from "./Waterfall";
 import { useRequestStore } from "../../store/requestStore";
 import { useResponseStore } from "../../store/responseStore";
 
@@ -24,7 +26,7 @@ export function ResponsePanel() {
 
   return (
     <aside className="flex flex-col h-full bg-card border-l border-border">
-      <ResponseStatusBar response={response} />
+      {response.fault ? <SoapFaultBanner fault={response.fault} /> : <ResponseStatusBar response={response} />}
       <ResponseTabsStrip activeTab={activeTab} onTabChange={setActiveTab} />
       {activeTab === "body" && (
         <>
@@ -40,7 +42,7 @@ export function ResponsePanel() {
         </>
       )}
       {activeTab === "headers" && <HeadersView headers={response.headers} />}
-      {activeTab === "timing" && <TimingStub />}
+      {activeTab === "timing" && <Waterfall timing={response.timing} />}
     </aside>
   );
 }
@@ -91,14 +93,6 @@ function HeadersView({ headers }: { headers: Record<string, string> }) {
           </tbody>
         </table>
       )}
-    </div>
-  );
-}
-
-function TimingStub() {
-  return (
-    <div className="flex-1 flex items-center justify-center text-muted text-[13px]" style={{ fontFamily: "var(--font-sans)" }}>
-      Total time only for now — per-phase waterfall coming with the instrumented engine.
     </div>
   );
 }

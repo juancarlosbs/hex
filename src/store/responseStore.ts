@@ -33,16 +33,25 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
 
     let entry: ResponseEntry;
     try {
-      const response = await api.sendRequest({
-        method: request.method,
-        url: request.url,
-        params: request.params,
-        headers: request.headers,
-        body: methodAllowsBody(request.method)
-          ? request.body
-          : { mode: "json", json: "", form: [] },
-        auth: request.auth,
-      });
+      const response = request.soap
+        ? request.soap.xmlDraft !== null
+          ? await api.sendSoapRaw({
+              endpoint: request.soap.meta.endpoint,
+              envelope: request.soap.xmlDraft,
+              soapAction: request.soap.meta.soapAction,
+              soapVersion: request.soap.meta.soapVersion,
+            })
+          : await api.sendSoap({ ...request.soap.meta, value: request.soap.value })
+        : await api.sendRequest({
+            method: request.method,
+            url: request.url,
+            params: request.params,
+            headers: request.headers,
+            body: methodAllowsBody(request.method)
+              ? request.body
+              : { mode: "json", json: "", form: [] },
+            auth: request.auth,
+          });
       entry = { state: "done", response };
     } catch (e) {
       entry = { state: "error", error: String(e) };

@@ -29,6 +29,12 @@
   --color-status-4xx: #e3b341;
   --color-status-5xx: #ff5c33;
 
+  --color-timing-dns: #a78bfa;
+  --color-timing-tcp: #58a6ff;
+  --color-timing-tls: #3fb950;
+  --color-timing-ttfb: #e3b341;
+  --color-timing-download: #ff8400;
+
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
 }

@@ -91,7 +91,7 @@ replaceOnce(
 // --- commit, tag, push ---
 run("git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock");
 run(`git commit -m "chore(release): ${tag}"`);
-run(`git tag ${tag}`);
+run(`git tag -a ${tag} -m "${tag}"`);
 console.log(`committed and tagged ${tag}, pushing...`);
 execSync("git push --follow-tags", { cwd: ROOT, stdio: "inherit" });
 

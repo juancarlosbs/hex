@@ -27,13 +27,21 @@ only `fix`/`chore`/etc → `patch`, breaking change (`!`) → `major`.
 
 ## When CI fails mid-release
 
-The release stays a draft — nothing half-published. To retry:
+The release stays a draft — nothing half-published. If a single matrix leg
+failed (e.g. a flaky runner), use GitHub's **"Re-run failed jobs"** — never
+"Re-run all jobs", which would create a duplicate draft release. The
+numbered procedure below is the full-restart path, for when the problem is
+in the code or config itself:
 
 1. Fix the problem on `main`.
 2. Delete the draft release (GitHub UI or `gh release delete vX.Y.Z`).
 3. Delete the tag: `git push origin :refs/tags/vX.Y.Z && git tag -d vX.Y.Z`.
 4. Revert the release commit if the fix requires it, then run
    `pnpm release` again.
+
+If you skip reverting the release commit before re-releasing, the next
+`pnpm release` simply bumps to the next version number and the failed one
+is skipped — harmless, just an unused version number.
 
 ## Post-MVP: release-please
 

@@ -21,6 +21,7 @@ Before working on an area, **open the corresponding doc**. Don't infer from code
 | `docs/ui.md`            | layout, titlebar, design tokens, components, design reference |
 | `docs/testing.md`       | testing strategy (Rust/Vitest/E2E), commands, CI |
 | `docs/decisions.md`     | why each architecture decision was made (ADRs) |
+| `docs/releases.md`      | versioning, publishing a release, release CI — **read before doing a release** |
 
 Rule: if the answer to an architecture/scope/stack question **exists in one of these docs**, read the doc instead of inferring. If a doc contradicts this `CLAUDE.md`, this file wins — and flag the divergence.
 
@@ -39,6 +40,7 @@ Rule: if the answer to an architecture/scope/stack question **exists in one of t
 - Rust test: `cargo test` (inside `src-tauri/`)
 - E2E: `pnpm test:e2e` (runs on CI Linux; see `docs/testing.md`)
 - Lint/format: `pnpm lint` · `cargo fmt` · `cargo clippy`
+- Release: `pnpm release <patch|minor|major>` (from `main`; see `docs/releases.md`)
 
 ## Structure
 

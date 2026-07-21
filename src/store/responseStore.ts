@@ -34,7 +34,14 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
     let entry: ResponseEntry;
     try {
       const response = request.soap
-        ? await api.sendSoap({ ...request.soap.meta, value: request.soap.value })
+        ? request.soap.xmlDraft !== null
+          ? await api.sendSoapRaw({
+              endpoint: request.soap.meta.endpoint,
+              envelope: request.soap.xmlDraft,
+              soapAction: request.soap.meta.soapAction,
+              soapVersion: request.soap.meta.soapVersion,
+            })
+          : await api.sendSoap({ ...request.soap.meta, value: request.soap.value })
         : await api.sendRequest({
             method: request.method,
             url: request.url,

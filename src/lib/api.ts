@@ -169,4 +169,21 @@ export const api = {
     soapVersion: string;
     value: FormValue;
   }) => invoke<HttpResponse>("send_soap", spec),
+
+  buildSoapEnvelope: (spec: {
+    schema: SchemaNode;
+    soapAction: string;
+    soapVersion: string;
+    value: FormValue;
+  }) => invoke<string>("build_soap_envelope", spec),
+
+  sendSoapRaw: (spec: {
+    endpoint: string;
+    envelope: string;
+    soapAction: string;
+    soapVersion: string;
+  }) => invoke<HttpResponse>("send_soap_raw", spec),
+
+  parseSoapEnvelope: (spec: { envelope: string; schema: SchemaNode }) =>
+    invoke<FormValue>("parse_envelope", spec),
 };

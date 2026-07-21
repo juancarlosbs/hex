@@ -45,7 +45,7 @@ describe("SchemaForm", () => {
         onChange={onChange}
       />
     );
-    fireEvent.change(screen.getByLabelText("Payment branch"), { target: { value: "1" } });
+    fireEvent.click(screen.getByLabelText("Payment branch cash"));
     expect(onChange).toHaveBeenCalledWith({
       choice: { branch: 1, value: { leaf: "cashDefault" } },
     });
@@ -71,6 +71,25 @@ describe("SchemaForm", () => {
     render(<SchemaForm schema={optRepeatable} value={"omitted"} onChange={onChange} />);
     fireEvent.click(screen.getByLabelText("tag present"));
     expect(onChange).toHaveBeenCalledWith({ repeated: [] });
+  });
+
+  it("collapsing a complex node hides its children", () => {
+    const nested: SchemaNode = {
+      name: "Root", namespace: null, occurs: { min: 1, max: { bounded: 1 } }, nillable: false,
+      doc: null, attributes: [],
+      kind: { sequence: [{
+        name: "Group", namespace: null, occurs: { min: 1, max: { bounded: 1 } }, nillable: false,
+        doc: null, attributes: [],
+        kind: { sequence: [{
+          name: "field", namespace: null, occurs: { min: 1, max: { bounded: 1 } }, nillable: false,
+          doc: null, attributes: [], kind: { leaf: { xsdType: "string", enumValues: [], default: null, fixed: null } },
+        }] },
+      }] },
+    };
+    render(<SchemaForm schema={nested} value={{ sequence: [{ sequence: [{ leaf: "" }] }] }} onChange={() => {}} />);
+    expect(screen.getByLabelText("field")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("toggle Group"));
+    expect(screen.queryByLabelText("field")).toBeNull();
   });
 
   it("repeatable add appends a default item", () => {

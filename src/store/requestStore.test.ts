@@ -5,6 +5,7 @@ vi.mock("../lib/api", () => ({
     getRequest: vi.fn(),
     updateRequest: vi.fn().mockResolvedValue(undefined),
     sendRequest: vi.fn(),
+    parseSoapEnvelope: vi.fn(),
   },
 }));
 vi.mock("./workspaceStore", () => ({
@@ -133,5 +134,50 @@ describe("response cleanup", () => {
     });
     useRequestStore.getState().closeAll();
     expect(useResponseStore.getState().responses).toEqual({});
+  });
+});
+
+describe("commitSoapXml", () => {
+  const leafSchema = {
+    name: "Op", namespace: null, occurs: { min: 1, max: { bounded: 1 } }, nillable: false,
+    doc: null, attributes: [], kind: { leaf: { xsdType: "string", enumValues: [], default: null, fixed: null } },
+  };
+
+  function seedSoap(xmlDraft: string | null) {
+    useRequestStore.setState({
+      openRequests: {
+        s1: {
+          ...makeEmptyRequest("s1", "S1", "POST", ["c1", "s1"]),
+          soap: {
+            meta: { wsdlUrl: "", inputElement: { namespace: "", local: "Op" }, endpoint: "", soapAction: "", soapVersion: "1.2" },
+            schema: leafSchema as never,
+            value: { leaf: "old" },
+            xmlDraft,
+          },
+        },
+      },
+      order: ["s1"],
+      activeId: "s1",
+    });
+  }
+
+  it("on success sets the parsed value, clears the draft, returns null", async () => {
+    seedSoap("<x/>");
+    vi.mocked(api.parseSoapEnvelope).mockResolvedValue({ leaf: "new" } as never);
+    const err = await useRequestStore.getState().commitSoapXml("s1");
+    expect(err).toBeNull();
+    const soap = useRequestStore.getState().openRequests.s1.soap!;
+    expect(soap.value).toEqual({ leaf: "new" });
+    expect(soap.xmlDraft).toBeNull();
+  });
+
+  it("on failure keeps the draft and returns the error message", async () => {
+    seedSoap("<bad/>");
+    vi.mocked(api.parseSoapEnvelope).mockRejectedValue("does not match schema");
+    const err = await useRequestStore.getState().commitSoapXml("s1");
+    expect(err).toBe("does not match schema");
+    const soap = useRequestStore.getState().openRequests.s1.soap!;
+    expect(soap.xmlDraft).toBe("<bad/>");
+    expect(soap.value).toEqual({ leaf: "old" });
   });
 });

@@ -64,6 +64,8 @@ export interface OpenRequest {
     meta: { wsdlUrl: string; inputElement: WsdlQName; endpoint: string; soapAction: string; soapVersion: string };
     schema: SchemaNode | null; // null while loading
     value: FormValue;
+    /** Hand-edited raw envelope from the XML view. null = derive from the form. */
+    xmlDraft: string | null;
   };
 }
 

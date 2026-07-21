@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import { cn } from "../../../lib/utils";
 import type { SchemaNode, XsdType } from "../../../lib/api";
 
@@ -6,11 +7,10 @@ interface LeafFieldProps {
   leaf: { xsdType: XsdType; enumValues: string[]; default: string | null; fixed: string | null };
   value: string | null;
   onChange: (value: string | null) => void;
-  className?: string;
 }
 
 const inputClass =
-  "px-2 py-[5px] text-[12px] rounded-[4px] border border-border bg-secondary text-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-60";
+  "w-full px-[10px] py-[7px] text-[13px] rounded-[6px] border border-border bg-card text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-60";
 
 function inputTypeFor(xsdType: XsdType): string {
   switch (xsdType) {
@@ -29,46 +29,53 @@ function inputTypeFor(xsdType: XsdType): string {
   }
 }
 
-export function LeafField({ node, leaf, value, onChange, className }: LeafFieldProps) {
+export function LeafField({ node, leaf, value, onChange }: LeafFieldProps) {
   const label = node.name;
 
   if (leaf.fixed !== null) {
-    return (
-      <input
-        aria-label={label}
-        readOnly
-        className={cn(inputClass, className)}
-        value={leaf.fixed}
-      />
-    );
+    return <input aria-label={label} readOnly className={inputClass} value={leaf.fixed} />;
   }
 
   if (leaf.enumValues.length > 0) {
     return (
-      <select
-        aria-label={label}
-        className={cn(inputClass, className)}
-        value={value ?? ""}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {leaf.enumValues.map((v) => (
-          <option key={v} value={v}>
-            {v}
-          </option>
-        ))}
-      </select>
+      <div className="relative w-full">
+        <select
+          aria-label={label}
+          className={cn(inputClass, "appearance-none pr-8 cursor-pointer")}
+          value={value ?? ""}
+          onChange={(e) => onChange(e.target.value)}
+        >
+          {leaf.enumValues.map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
+        <ChevronDown
+          size={14}
+          className="absolute right-[10px] top-1/2 -translate-y-1/2 text-muted pointer-events-none"
+        />
+      </div>
     );
   }
 
   if (leaf.xsdType === "boolean") {
+    const on = value === "true";
     return (
-      <input
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
         aria-label={label}
-        type="checkbox"
-        className={cn("w-4 h-4 accent-primary", className)}
-        checked={value === "true"}
-        onChange={(e) => onChange(e.target.checked ? "true" : "false")}
-      />
+        onClick={() => onChange(on ? "false" : "true")}
+        className="relative w-[38px] h-[22px] rounded-full transition-colors shrink-0 cursor-pointer"
+        style={{ background: on ? "var(--color-primary)" : "var(--color-secondary)" }}
+      >
+        <span
+          className="absolute top-[3px] h-[16px] w-[16px] rounded-full bg-white transition-all"
+          style={{ left: on ? "19px" : "3px" }}
+        />
+      </button>
     );
   }
 
@@ -76,7 +83,7 @@ export function LeafField({ node, leaf, value, onChange, className }: LeafFieldP
     <input
       aria-label={label}
       type={inputTypeFor(leaf.xsdType)}
-      className={cn(inputClass, className)}
+      className={inputClass}
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value)}
     />

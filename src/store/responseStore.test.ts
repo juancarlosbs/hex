@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../lib/api", () => ({
-  api: { sendRequest: vi.fn(), sendSoap: vi.fn() },
+  api: { sendRequest: vi.fn(), sendSoap: vi.fn(), sendSoapRaw: vi.fn() },
 }));
 
 import { useResponseStore } from "./responseStore";
@@ -102,11 +102,37 @@ describe("send", () => {
       },
       schema: null,
       value: { leaf: null },
+      xmlDraft: null,
     };
     await useResponseStore.getState().send(req);
     expect(api.sendSoap).toHaveBeenCalledWith({ ...req.soap.meta, value: req.soap.value });
     expect(api.sendRequest).not.toHaveBeenCalled();
     expect(useResponseStore.getState().responses.r1).toEqual({ state: "done", response: RESP });
+  });
+
+  it("calls sendSoapRaw with the edited envelope when xmlDraft is set", async () => {
+    vi.mocked(api.sendSoapRaw).mockResolvedValue(RESP);
+    const req = request();
+    req.soap = {
+      meta: {
+        wsdlUrl: "https://example.com/service?wsdl",
+        inputElement: { namespace: "ns", local: "Op" },
+        endpoint: "https://example.com/service",
+        soapAction: "urn:Op",
+        soapVersion: "1.2",
+      },
+      schema: null,
+      value: { leaf: null },
+      xmlDraft: "<soapenv:Envelope>edited</soapenv:Envelope>",
+    };
+    await useResponseStore.getState().send(req);
+    expect(api.sendSoapRaw).toHaveBeenCalledWith({
+      endpoint: "https://example.com/service",
+      envelope: "<soapenv:Envelope>edited</soapenv:Envelope>",
+      soapAction: "urn:Op",
+      soapVersion: "1.2",
+    });
+    expect(api.sendSoap).not.toHaveBeenCalled();
   });
 });
 

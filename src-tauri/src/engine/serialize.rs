@@ -150,7 +150,13 @@ pub fn build_envelope(
          <soapenv:Envelope{decls}><soapenv:Body>{body_xml}</soapenv:Body></soapenv:Envelope>"
     );
 
-    let meta = if soap_version == "1.2" {
+    Ok((xml, soap_meta(soap_version, soap_action)))
+}
+
+/// The transport metadata (Content-Type + optional SOAPAction header) for a SOAP
+/// version. Shared by `build_envelope` and the raw-XML send path.
+pub fn soap_meta(soap_version: &str, soap_action: &str) -> SoapMeta {
+    if soap_version == "1.2" {
         SoapMeta {
             content_type: format!("application/soap+xml; charset=utf-8; action=\"{soap_action}\""),
             soap_action_header: None,
@@ -160,8 +166,7 @@ pub fn build_envelope(
             content_type: "text/xml; charset=utf-8".into(),
             soap_action_header: Some(("SOAPAction".into(), format!("\"{soap_action}\""))),
         }
-    };
-    Ok((xml, meta))
+    }
 }
 
 #[cfg(test)]

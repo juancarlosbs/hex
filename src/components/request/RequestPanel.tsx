@@ -1,9 +1,11 @@
-import { useEffect } from "react";
-import { CornerDownLeft, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useRequestStore } from "../../store/requestStore";
-import { useResponseStore } from "../../store/responseStore";
 import { methodAllowsBody } from "../../lib/request-types";
 import { UrlBar } from "./UrlBar";
+import { SoapUrlBar } from "./soap/SoapUrlBar";
+import { SoapAutoMeta } from "./soap/SoapAutoMeta";
+import { SoapRequestTabs, type SoapBodyView } from "./soap/SoapRequestTabs";
+import { SoapXmlBody } from "./soap/SoapXmlBody";
 import { RequestTabsStrip } from "./RequestTabsStrip";
 import { ParamsTab } from "./ParamsTab";
 import { HeadersTab } from "./HeadersTab";
@@ -20,9 +22,18 @@ export function RequestPanel() {
   const soap = req?.soap;
   const saveRequest = useRequestStore((s) => s.saveRequest);
   const setSoapValue = useRequestStore((s) => s.setSoapValue);
-  const loading = useResponseStore((s) => (activeId ? s.responses[activeId]?.state === "loading" : false));
-  const send = useResponseStore((s) => s.send);
-  const cancel = useResponseStore((s) => s.cancel);
+  const setSoapXmlDraft = useRequestStore((s) => s.setSoapXmlDraft);
+  const commitSoapXml = useRequestStore((s) => s.commitSoapXml);
+  const [soapView, setSoapView] = useState<SoapBodyView>("form");
+  const [xmlSyncError, setXmlSyncError] = useState<string | null>(null);
+
+  function onSoapViewChange(next: SoapBodyView) {
+    // Leaving the XML tab: parse the draft back into the form (raw fallback on failure).
+    if (next === "form" && soapView === "xml" && activeId) {
+      commitSoapXml(activeId).then(setXmlSyncError);
+    }
+    setSoapView(next);
+  }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -40,34 +51,45 @@ export function RequestPanel() {
   if (soap && req) {
     return (
       <div className="flex flex-col h-full bg-background">
-        <div className="flex items-center justify-between gap-2 p-2 bg-card rounded-[8px] border border-border m-2">
-          <span
-            className="text-[13px] text-foreground truncate"
-            style={{ fontFamily: "var(--font-sans)" }}
-          >
-            {req.name}
-          </span>
-          <button
-            type="button"
-            disabled={!loading && soap.schema === null}
-            onClick={() => (loading ? cancel(req.id) : send(req))}
-            className="flex items-center gap-2 px-5 py-[10px] rounded-[6px] bg-primary text-primary-foreground text-[13px] font-semibold cursor-pointer hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ fontFamily: "var(--font-sans)" }}
-            title={loading ? "Cancel" : soap.schema === null ? "Loading schema…" : "Send (⌘↵)"}
-          >
-            {loading ? "Cancel" : "Send"}
-            {loading ? <X size={14} /> : <CornerDownLeft size={14} />}
-          </button>
-        </div>
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <SoapUrlBar requestId={req.id} />
+        <SoapAutoMeta requestId={req.id} />
+        <SoapRequestTabs requestId={req.id} view={soapView} onViewChange={onSoapViewChange} />
+        <div className="flex-1 min-h-0">
           {soap.schema === null ? (
             <div className="p-3 text-[12px] text-muted">Loading schema…</div>
+          ) : soapView === "form" ? (
+            <div className="h-full flex flex-col">
+              {soap.xmlDraft !== null && (
+                <div
+                  className="flex items-center gap-2 px-3 py-2 text-[12px] border-b border-border shrink-0"
+                  style={{ background: "var(--color-soap-op-surface)" }}
+                >
+                  <span style={{ color: "var(--color-soap-op)" }}>
+                    Sending hand-edited XML{xmlSyncError ? `: ${xmlSyncError}` : ""}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSoapXmlDraft(activeId, null);
+                      setXmlSyncError(null);
+                    }}
+                    className="ml-auto text-[12px] font-semibold cursor-pointer hover:underline"
+                    style={{ color: "var(--color-soap-op)" }}
+                  >
+                    Reset to form
+                  </button>
+                </div>
+              )}
+              <div className="flex-1 min-h-0 overflow-y-auto">
+                <SchemaForm
+                  schema={soap.schema}
+                  value={soap.value}
+                  onChange={(next) => setSoapValue(activeId, next)}
+                />
+              </div>
+            </div>
           ) : (
-            <SchemaForm
-              schema={soap.schema}
-              value={soap.value}
-              onChange={(next) => setSoapValue(activeId, next)}
-            />
+            <SoapXmlBody requestId={req.id} />
           )}
         </div>
       </div>

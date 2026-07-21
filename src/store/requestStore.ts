@@ -45,6 +45,13 @@ interface RequestState {
   setAuth(id: string, auth: AuthConfig): void;
 
   setSoapValue(id: string, next: FormValue): void;
+  setSoapEndpoint(id: string, endpoint: string): void;
+  setSoapVersion(id: string, soapVersion: string): void;
+  setSoapXmlDraft(id: string, xmlDraft: string | null): void;
+  /** Parse the XML draft back into the form. Returns null on success (form is
+   * source again), or an error message when the XML doesn't conform (draft kept,
+   * request stays in raw mode). */
+  commitSoapXml(id: string): Promise<string | null>;
 }
 
 const uid = () => crypto.randomUUID();
@@ -245,7 +252,56 @@ export const useRequestStore = create<RequestState>((set, get) => ({
     set((s) => {
       const r = s.openRequests[id];
       if (!r || !r.soap) return s;
-      return { openRequests: patch(s.openRequests, id, { soap: { ...r.soap, value: next } }) };
+      // Editing the form makes it the source of truth again — drop any XML edits.
+      return {
+        openRequests: patch(s.openRequests, id, {
+          soap: { ...r.soap, value: next, xmlDraft: null },
+        }),
+      };
+    });
+  },
+
+  setSoapXmlDraft(id, xmlDraft) {
+    set((s) => {
+      const r = s.openRequests[id];
+      if (!r || !r.soap) return s;
+      return { openRequests: patch(s.openRequests, id, { soap: { ...r.soap, xmlDraft } }) };
+    });
+  },
+
+  async commitSoapXml(id) {
+    const soap = get().openRequests[id]?.soap;
+    if (!soap || soap.xmlDraft === null || soap.schema === null) return null;
+    try {
+      const value = await api.parseSoapEnvelope({ envelope: soap.xmlDraft, schema: soap.schema });
+      get().setSoapValue(id, value); // clears xmlDraft — form is the source again
+      return null;
+    } catch (e) {
+      return String(e); // keep the draft; request stays in raw mode
+    }
+  },
+
+  setSoapEndpoint(id, endpoint) {
+    set((s) => {
+      const r = s.openRequests[id];
+      if (!r || !r.soap) return s;
+      return {
+        openRequests: patch(s.openRequests, id, {
+          soap: { ...r.soap, meta: { ...r.soap.meta, endpoint } },
+        }),
+      };
+    });
+  },
+
+  setSoapVersion(id, soapVersion) {
+    set((s) => {
+      const r = s.openRequests[id];
+      if (!r || !r.soap) return s;
+      return {
+        openRequests: patch(s.openRequests, id, {
+          soap: { ...r.soap, meta: { ...r.soap.meta, soapVersion } },
+        }),
+      };
     });
   },
 }));
@@ -292,6 +348,7 @@ function fromFile(data: RequestFileData, path: string[]): OpenRequest {
             },
             schema: null,
             value: { sequence: [] },
+            xmlDraft: null,
           }
         : undefined,
   };

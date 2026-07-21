@@ -9,8 +9,8 @@ interface SchemaFormProps {
 
 export function SchemaForm({ schema, value, onChange }: SchemaFormProps) {
   return (
-    <div className="flex flex-col gap-3 p-3">
-      <SchemaNodeField node={schema} value={value} onChange={onChange} />
+    <div className="flex flex-col w-full">
+      <SchemaNodeField node={schema} value={value} onChange={onChange} depth={0} root />
     </div>
   );
 }

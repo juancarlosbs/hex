@@ -11,7 +11,7 @@ pub mod serialize;
 use connector::TimingBreakdown;
 use fault::SoapFault;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, specta::Type)]
 pub struct SendSpec {
     pub method: String,
     pub url: String,
@@ -23,7 +23,7 @@ pub struct SendSpec {
     pub auth: AuthData,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct HttpResponse {
     pub status: u16,

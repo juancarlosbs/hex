@@ -13,7 +13,7 @@ use tokio_rustls::TlsConnector;
 
 /// Per-phase timing of a single request (differentiator #3 — the waterfall).
 /// MVP: one new connection per request, so every phase is always measured.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TimingBreakdown {
     pub dns_ms: Option<u64>,

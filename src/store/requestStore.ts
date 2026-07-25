@@ -316,24 +316,46 @@ function patch(
   return { ...map, [id]: { ...cur, ...fields } };
 }
 
+/** Wire entry (nullable fields) → UI KeyValue (undefined-based, narrowed `type`). */
+function toKeyValue(e: RequestFileData["params"][number]): KeyValue {
+  return {
+    id: e.id,
+    key: e.key,
+    value: e.value,
+    description: e.description ?? undefined,
+    enabled: e.enabled,
+    type: e.type === "file" || e.type === "text" ? e.type : undefined,
+  };
+}
+
 function fromFile(data: RequestFileData, path: string[]): OpenRequest {
-  const method: HttpMethod = (HTTP_METHODS as readonly string[]).includes(data.method ?? "")
-    ? (data.method as HttpMethod)
+  const rest = data.kind === "rest" ? data : undefined;
+  const method: HttpMethod = (HTTP_METHODS as readonly string[]).includes(rest?.method ?? "")
+    ? (rest?.method as HttpMethod)
     : "GET";
+  const mode = data.body?.mode;
+  const auth = data.auth;
   return {
     id: data.id,
     name: data.name,
     method,
-    url: data.url ?? "",
+    url: rest?.url ?? "",
     activeTab: "params",
-    params: data.params ?? [],
-    headers: data.headers ?? [],
+    params: (data.params ?? []).map(toKeyValue),
+    headers: (data.headers ?? []).map(toKeyValue),
     // the wire shape omits empty `form` (serde skip_serializing_if) — normalize it
     // here so store consumers never see body.form === undefined
     body: data.body
-      ? { ...data.body, form: data.body.form ?? [] }
+      ? {
+          mode: mode === "form-urlencoded" || mode === "form-multipart" ? mode : "json",
+          json: data.body.json,
+          form: (data.body.form ?? []).map(toKeyValue),
+        }
       : { mode: "json", json: "", form: [] },
-    auth: data.auth ?? { type: "none" },
+    auth:
+      auth?.type === "apikey"
+        ? { ...auth, addTo: auth.addTo === "query" ? "query" : "header" }
+        : (auth ?? { type: "none" }),
     path,
     dirty: false,
     soap:

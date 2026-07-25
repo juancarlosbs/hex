@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// The instance the user filled in. Mirrors `NodeKind`; the serializer walks the
 /// pair (SchemaNode, FormValue). See docs/domain-model.md §3.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum FormValue {
     Leaf(Option<String>),

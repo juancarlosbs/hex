@@ -1,32 +1,8 @@
 export type ResponseTab = "body" | "headers" | "timing";
 export type ResponseBodyView = "tree" | "raw";
 
-export interface TimingBreakdown {
-  dnsMs: number | null;
-  tcpMs: number | null;
-  tlsMs: number | null;
-  ttfbMs: number;
-  downloadMs: number;
-  totalMs: number;
-}
-
-export interface SoapFault {
-  code: string;
-  reason: string;
-  detail: string | null;
-  actor: string | null;
-}
-
-export interface HttpResponse {
-  status: number;
-  statusText: string;
-  timeMs: number;
-  sizeBytes: number;
-  headers: Record<string, string>;
-  body: string;
-  timing: TimingBreakdown;
-  fault?: SoapFault | null;
-}
+// Wire types come from the generated bindings — single source of truth in Rust.
+export type { HttpResponse, SoapFault, TimingBreakdown } from "../bindings";
 
 export function statusColorClass(status: number): string {
   if (status < 300) return "text-status-2xx";

@@ -54,7 +54,7 @@ describe("dirty tracking", () => {
   it("keeps dirty when the request is edited during an in-flight save", async () => {
     let resolveUpdate!: () => void;
     vi.mocked(api.updateRequest).mockReturnValue(
-      new Promise((resolve) => { resolveUpdate = () => resolve(undefined); })
+      new Promise((resolve) => { resolveUpdate = () => resolve(null); })
     );
 
     const savePromise = useRequestStore.getState().saveRequest("r1");
@@ -93,6 +93,8 @@ describe("dirty tracking", () => {
       kind: "rest",
       method: "POST",
       url: "https://api.dev",
+      params: [],
+      headers: [],
       body: { mode: "json", json: "{}" } as RestBody,
     });
     await useRequestStore.getState().openRequest("r2", "teste", ["c1", "r2"]);
@@ -106,6 +108,8 @@ describe("dirty tracking", () => {
       kind: "rest",
       method: "GET",
       url: "https://api.dev/r2",
+      params: [],
+      headers: [],
     });
     const first = useRequestStore.getState().openRequest("r2", "R2", ["c1", "r2"]);
     const second = useRequestStore.getState().openRequest("r2", "R2", ["c1", "r2"]);

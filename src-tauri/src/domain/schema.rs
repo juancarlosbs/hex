@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// The shape of a SOAP operation input. Immutable tree derived from XSD.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SchemaNode {
     pub name: String,
@@ -13,7 +13,7 @@ pub struct SchemaNode {
     pub kind: NodeKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum NodeKind {
     Leaf {
@@ -29,14 +29,14 @@ pub enum NodeKind {
     Any,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Occurs {
     pub min: u32,
     pub max: MaxOccurs,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum MaxOccurs {
     Bounded(u32),
@@ -57,7 +57,7 @@ impl Occurs {
 }
 
 /// Subset of simple types supported in MVP (ADR-010).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum XsdType {
     String,
@@ -68,12 +68,14 @@ pub enum XsdType {
     Date,
     DateTime,
     Time,
+    // explicit: serde camelCases this to "gYearMonth" but specta rc.22 would emit "gyearMonth"
+    #[serde(rename = "gYearMonth")]
     GYearMonth,
     Base64Binary,
     Other(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Attribute {
     pub name: String,

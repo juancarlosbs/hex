@@ -87,7 +87,9 @@ fn parse_node(
         let elem = sibs[*cur];
         *cur += 1;
         parse_one(node, &elem)
-    } else if node.occurs.min == 0 {
+    } else if node.occurs.min == 0 || matches!(node.kind, NodeKind::LazyRef(_)) {
+        // An unexpanded recursive placeholder serializes to nothing — accept
+        // its absence even when required (mirrors serialize's Omitted skip).
         Ok(FormValue::Omitted)
     } else {
         Err(structure(format!(
@@ -164,6 +166,10 @@ fn parse_one(node: &SchemaNode, elem: &Node) -> Result<FormValue, DeserializeErr
                 value: Box::new(value),
             })
         }
+        NodeKind::LazyRef(_) => Err(structure(format!(
+            "recursive element <{}> is not expanded — expand it in the form first",
+            node.name
+        ))),
         NodeKind::Any => Err(structure("xs:any is not editable in the XML view")),
     }
 }
@@ -251,6 +257,19 @@ mod tests {
             },
             FormValue::Nil,
         ]);
+        assert_eq!(roundtrip(&schema, &value), value);
+    }
+
+    #[test]
+    fn roundtrips_unexpanded_lazy_ref_as_omitted() {
+        let mut lazy = leaf("next", 1);
+        lazy.kind = NodeKind::LazyRef(crate::domain::wsdl::QName {
+            namespace: "urn:test".into(),
+            local: "Node".into(),
+        });
+        let schema = seq("Op", vec![leaf("A", 1), lazy]);
+        let value =
+            FormValue::Sequence(vec![FormValue::Leaf(Some("x".into())), FormValue::Omitted]);
         assert_eq!(roundtrip(&schema, &value), value);
     }
 

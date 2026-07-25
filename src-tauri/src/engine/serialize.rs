@@ -340,6 +340,72 @@ mod tests {
     }
 
     #[test]
+    fn unexpanded_lazy_ref_omitted_emits_nothing() {
+        let lazy = SchemaNode {
+            kind: NodeKind::LazyRef(crate::domain::wsdl::QName {
+                namespace: "urn:t".into(),
+                local: "Node".into(),
+            }),
+            ..leaf("next", None)
+        };
+        let schema = SchemaNode {
+            kind: NodeKind::Sequence(vec![leaf("value", None), lazy]),
+            ..leaf("Root", None)
+        };
+        let value =
+            FormValue::Sequence(vec![FormValue::Leaf(Some("x".into())), FormValue::Omitted]);
+        let (xml, _) = build_envelope(&schema, &value, "1.1", "urn:x").unwrap();
+        assert!(xml.contains("<value>x</value>"), "got: {xml}");
+        assert!(!xml.contains("next"), "got: {xml}");
+    }
+
+    #[test]
+    fn unexpanded_lazy_ref_with_filled_value_is_mismatch() {
+        let lazy = SchemaNode {
+            kind: NodeKind::LazyRef(crate::domain::wsdl::QName {
+                namespace: "urn:t".into(),
+                local: "Node".into(),
+            }),
+            ..leaf("next", None)
+        };
+        let value = FormValue::Sequence(vec![FormValue::Leaf(Some("x".into()))]);
+        let result = build_envelope(&lazy, &value, "1.1", "urn:x");
+        assert!(matches!(result, Err(DomainError::ValueMismatch { .. })));
+    }
+
+    #[test]
+    fn expanded_recursive_subtree_serializes_at_filled_depth() {
+        // Simulates two on-demand expansions of Node{value, next: LazyRef}:
+        // the deepest `next` is still lazy and Omitted; filled levels serialize.
+        fn lazy_next() -> SchemaNode {
+            SchemaNode {
+                kind: NodeKind::LazyRef(crate::domain::wsdl::QName {
+                    namespace: "urn:t".into(),
+                    local: "Node".into(),
+                }),
+                ..leaf("next", None)
+            }
+        }
+        fn node_seq(next: SchemaNode) -> NodeKind {
+            NodeKind::Sequence(vec![leaf("value", None), next])
+        }
+        let level2 = SchemaNode {
+            kind: node_seq(lazy_next()),
+            ..leaf("next", None)
+        };
+        let schema = SchemaNode {
+            kind: node_seq(level2),
+            ..leaf("Root", None)
+        };
+        let value = FormValue::Sequence(vec![
+            FormValue::Leaf(Some("a".into())),
+            FormValue::Sequence(vec![FormValue::Leaf(Some("b".into())), FormValue::Omitted]),
+        ]);
+        let (xml, _) = build_envelope(&schema, &value, "1.1", "urn:x").unwrap();
+        assert!(xml.contains("<next><value>b</value></next>"), "got: {xml}");
+    }
+
+    #[test]
     fn kind_value_mismatch_returns_error() {
         let node = leaf("Id", None);
         let value = FormValue::Sequence(vec![]);

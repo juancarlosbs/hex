@@ -30,6 +30,40 @@ pub fn build_schema(set: &SchemaSet, root: &QName) -> Result<SchemaNode, WsdlErr
     index.walk_element(el, &mut Vec::new(), 0)
 }
 
+/// Expand one level of a recursive placeholder (`NodeKind::LazyRef`): rebuilds
+/// the node's kind from its named type, with the type itself re-guarded so
+/// nested self-references become `LazyRef` again — the UI keeps expanding on
+/// demand. Non-lazy nodes are returned unchanged (idempotent).
+pub fn expand_lazy_node(set: &SchemaSet, node: &SchemaNode) -> Result<SchemaNode, WsdlError> {
+    let NodeKind::LazyRef(tq) = &node.kind else {
+        return Ok(node.clone());
+    };
+    let docs: Vec<Document> = set
+        .docs
+        .iter()
+        .map(|d| {
+            Document::parse(&d.xml).map_err(|e| WsdlError::InvalidXml {
+                url: d.url.clone(),
+                message: e.to_string(),
+            })
+        })
+        .collect::<Result<_, _>>()?;
+    let index = Index::build(&docs);
+    let t = index
+        .named_type(tq)
+        .ok_or_else(|| WsdlError::TypeNotFound {
+            qname: qname_str(tq),
+        })?;
+    let mut path_types = vec![(tq.namespace.clone(), tq.local.clone())];
+    let kind = index.walk_complex(t, &mut path_types, 0)?;
+    Ok(SchemaNode {
+        kind,
+        attributes: index.collect_all_attributes(t, 0),
+        doc: None,
+        ..node.clone()
+    })
+}
+
 fn qname_str(q: &QName) -> String {
     format!("{{{}}}{}", q.namespace, q.local)
 }
@@ -138,7 +172,11 @@ impl<'a> Index<'a> {
                         return Ok((leaf_from_simple_type(t, el), vec![], None));
                     }
                     if depth >= DEPTH_CAP || path_types.contains(&key) {
-                        return Ok((NodeKind::Any, vec![], Some(RECURSIVE_DOC.to_string())));
+                        return Ok((
+                            NodeKind::LazyRef(tq),
+                            vec![],
+                            Some(RECURSIVE_DOC.to_string()),
+                        ));
                     }
                     path_types.push(key);
                     let kind = self.walk_complex(t, path_types, depth + 1)?;
@@ -647,10 +685,6 @@ mod tests {
         assert!(node.attributes.iter().any(|a| a.name == "version"));
     }
 
-    fn first_leaf_or_any(node: &SchemaNode) -> &NodeKind {
-        &node.kind
-    }
-
     #[test]
     fn xs_any_becomes_any() {
         let set = set_from(include_str!("testdata/fallbacks.xsd"));
@@ -677,28 +711,105 @@ mod tests {
         assert_eq!(node.doc.as_deref(), Some("unsupported: edit raw"));
     }
 
+    /// Depth-first search for a `LazyRef` placeholder in the tree.
+    fn find_lazy(n: &SchemaNode) -> Option<&SchemaNode> {
+        if matches!(n.kind, NodeKind::LazyRef(_)) {
+            return Some(n);
+        }
+        match &n.kind {
+            NodeKind::Sequence(c) | NodeKind::Choice(c) => c.iter().find_map(find_lazy),
+            _ => None,
+        }
+    }
+
     #[test]
-    fn recursive_type_terminates_with_marker() {
+    fn recursive_type_becomes_lazy_ref_with_marker() {
         let set = set_from(include_str!("testdata/fallbacks.xsd"));
         let root = QName {
             namespace: "http://ex/fb".into(),
             local: "Recursive".into(),
         };
         let node = build_schema(&set, &root).unwrap(); // must not stack-overflow
-                                                       // Walk down `next` until the guard emits an Any marked "recursive...".
-        fn find_recursive(n: &SchemaNode) -> bool {
-            if matches!(n.kind, NodeKind::Any)
-                && n.doc.as_deref() == Some("recursive: expand on demand")
-            {
-                return true;
-            }
-            match &n.kind {
-                NodeKind::Sequence(c) | NodeKind::Choice(c) => c.iter().any(find_recursive),
-                _ => false,
+        let lazy = find_lazy(&node).expect("expected a LazyRef placeholder");
+        assert_eq!(lazy.name, "next");
+        assert!(lazy.occurs.optional());
+        assert_eq!(lazy.doc.as_deref(), Some("recursive: expand on demand"));
+        let NodeKind::LazyRef(tq) = &lazy.kind else {
+            unreachable!()
+        };
+        assert_eq!(tq.namespace, "http://ex/fb");
+        assert_eq!(tq.local, "Node");
+    }
+
+    #[test]
+    fn expand_lazy_node_expands_one_level_and_stays_lazy_below() {
+        let set = set_from(include_str!("testdata/fallbacks.xsd"));
+        let root = QName {
+            namespace: "http://ex/fb".into(),
+            local: "Recursive".into(),
+        };
+        let node = build_schema(&set, &root).unwrap();
+        let lazy = find_lazy(&node).unwrap();
+
+        let expanded = expand_lazy_node(&set, lazy).unwrap();
+        // element identity is preserved; only the kind is filled in
+        assert_eq!(expanded.name, "next");
+        assert!(expanded.occurs.optional());
+        let NodeKind::Sequence(children) = &expanded.kind else {
+            panic!("expected Sequence, got {:?}", expanded.kind)
+        };
+        assert_eq!(children[0].name, "value");
+        // the nested self-reference is again a LazyRef — expandable on demand
+        let nested = find_lazy(&expanded).expect("nested LazyRef");
+        assert_eq!(nested.name, "next");
+
+        // non-lazy input is returned unchanged (idempotent)
+        let same = expand_lazy_node(&set, &node).unwrap();
+        assert_eq!(same, node);
+    }
+
+    #[test]
+    fn depth_cap_truncates_deep_non_cyclic_chains() {
+        // A linear chain of named types deeper than DEPTH_CAP (no cycle):
+        // T0 -> T1 -> ... -> T20. The cap must truncate with a LazyRef.
+        let mut types = String::new();
+        for i in 0..20 {
+            types.push_str(&format!(
+                r#"<xs:complexType name="T{i}"><xs:sequence>
+                     <xs:element name="child" type="tns:T{}"/>
+                   </xs:sequence></xs:complexType>"#,
+                i + 1
+            ));
+        }
+        types.push_str(r#"<xs:complexType name="T20"><xs:sequence/></xs:complexType>"#);
+        let xsd = format!(
+            r#"<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+                 xmlns:tns="http://ex/deep" targetNamespace="http://ex/deep">
+                 {types}
+                 <xs:element name="Deep" type="tns:T0"/>
+               </xs:schema>"#
+        );
+        let set = set_from(&xsd);
+        let root = QName {
+            namespace: "http://ex/deep".into(),
+            local: "Deep".into(),
+        };
+        let node = build_schema(&set, &root).unwrap();
+
+        // walk down: depth of the truncation point equals DEPTH_CAP
+        let mut cur = &node;
+        let mut hops = 0;
+        loop {
+            match &cur.kind {
+                NodeKind::Sequence(c) => {
+                    cur = &c[0];
+                    hops += 1;
+                }
+                NodeKind::LazyRef(_) => break,
+                other => panic!("unexpected kind at hop {hops}: {other:?}"),
             }
         }
-        assert!(find_recursive(&node));
-        let _ = first_leaf_or_any(&node);
+        assert_eq!(hops, DEPTH_CAP);
     }
 
     #[test]

@@ -10,7 +10,7 @@ import {
   RequestTab,
   makeEmptyRequest,
 } from "../lib/request-types";
-import { api, FormValue, RequestFileData } from "../lib/api";
+import { api, FormValue, RequestFileData, SchemaNode } from "../lib/api";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useCollectionStore } from "./collectionStore";
 import { useResponseStore } from "./responseStore";
@@ -45,6 +45,9 @@ interface RequestState {
   setAuth(id: string, auth: AuthConfig): void;
 
   setSoapValue(id: string, next: FormValue): void;
+  /** Replaces the loaded operation schema — used when a recursive (lazyRef)
+   * node is expanded on demand. */
+  setSoapSchema(id: string, schema: SchemaNode): void;
   setSoapEndpoint(id: string, endpoint: string): void;
   setSoapVersion(id: string, soapVersion: string): void;
   setSoapXmlDraft(id: string, xmlDraft: string | null): void;
@@ -258,6 +261,14 @@ export const useRequestStore = create<RequestState>((set, get) => ({
           soap: { ...r.soap, value: next, xmlDraft: null },
         }),
       };
+    });
+  },
+
+  setSoapSchema(id, schema) {
+    set((s) => {
+      const r = s.openRequests[id];
+      if (!r || !r.soap) return s;
+      return { openRequests: patch(s.openRequests, id, { soap: { ...r.soap, schema } }) };
     });
   },
 

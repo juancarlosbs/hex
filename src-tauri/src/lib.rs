@@ -19,6 +19,7 @@ fn specta_builder() -> tauri_specta::Builder {
         commands::import_wsdl,
         commands::confirm_wsdl_import,
         commands::get_operation_schema,
+        commands::expand_schema_node,
         commands::send_soap,
         commands::build_soap_envelope,
         commands::send_soap_raw,

@@ -1,3 +1,4 @@
+use crate::domain::wsdl::QName;
 use serde::{Deserialize, Serialize};
 
 /// The shape of a SOAP operation input. Immutable tree derived from XSD.
@@ -26,6 +27,10 @@ pub enum NodeKind {
     },
     Sequence(Vec<SchemaNode>),
     Choice(Vec<SchemaNode>),
+    /// Recursive named type (direct or transitive cycle, or depth cap hit):
+    /// NOT expanded inline. Carries the type QName so the UI can expand one
+    /// more level on demand (`wsdl::xsd::expand_lazy_node`).
+    LazyRef(QName),
     Any,
 }
 

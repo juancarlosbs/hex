@@ -240,19 +240,12 @@ pub async fn get_operation_schema(
     wsdl::xsd::build_schema(&set, &input_element).map_err(|e| e.to_string())
 }
 
-use crate::domain::value::FormValue;
-use crate::engine;
-
+/// Expand one level of a recursive placeholder (`NodeKind::LazyRef`) in the
+/// operation schema. The frontend replaces the placeholder with the returned
+/// subtree; nested self-references stay lazy for further on-demand expansion.
 #[tauri::command]
 #[specta::specta]
-pub async fn send_soap(
-    wsdl_url: String,
-    input_element: QName,
-    endpoint: String,
-    soap_action: String,
-    soap_version: String,
-    value: FormValue,
-) -> Result<engine::HttpResponse, String> {
+pub async fn expand_schema_node(wsdl_url: String, node: SchemaNode) -> Result<SchemaNode, String> {
     let client = http_client()?;
     let fetch = |u: String| {
         let client = client.clone();
@@ -268,8 +261,23 @@ pub async fn send_soap(
     let set = wsdl::resolve::resolve(&wsdl_url, &root_xml, fetch)
         .await
         .map_err(|e| e.to_string())?;
-    let schema = wsdl::xsd::build_schema(&set, &input_element).map_err(|e| e.to_string())?;
+    wsdl::xsd::expand_lazy_node(&set, &node).map_err(|e| e.to_string())
+}
 
+use crate::domain::value::FormValue;
+use crate::engine;
+
+/// Sends the SOAP request from the schema the frontend already holds — which is
+/// authoritative: it carries any on-demand expansions of recursive types.
+#[tauri::command]
+#[specta::specta]
+pub async fn send_soap(
+    schema: SchemaNode,
+    endpoint: String,
+    soap_action: String,
+    soap_version: String,
+    value: FormValue,
+) -> Result<engine::HttpResponse, String> {
     let (envelope, meta) =
         engine::serialize::build_envelope(&schema, &value, &soap_version, &soap_action)
             .map_err(|e| e.to_string())?;

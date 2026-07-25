@@ -95,10 +95,7 @@ walk_element(el, path_types) -> SchemaNode:
   return SchemaNode{ name: el.name, namespace: type.targetNamespace, occurs, nillable, doc, attributes, kind }
 ```
 
-**Recursion guard** (`walk_element_with_guard`): maintains `path_types` = stack of type QNames on the current path. If the child's type is already in `path_types` (direct/transitive cycle), **don't expand**: emit a placeholder node and stop. In MVP:
-- depth cap `D` (e.g.: 12); when reached, truncate;
-- the placeholder node is marked (via `doc = "recursive: expand on demand"`);
-- the UI expands lazily by calling a command `expand_schema_node(type_ref, depth)` that runs one more level. (A dedicated `NodeKind::LazyRef` can be added later; in MVP the `doc` marker is enough.)
+**Recursion guard**: maintains `path_types` = stack of type QNames on the current path. If the child's type is already in `path_types` (direct/transitive cycle), or depth reaches the cap `DEPTH_CAP` (12), **don't expand**: emit `NodeKind::LazyRef(type QName)` (also marked `doc = "recursive: expand on demand"`) and stop. The UI shows the placeholder with a "recursive" badge and expands it lazily with the command `expand_schema_node(wsdl_url, node)` -> `wsdl::xsd::expand_lazy_node`, which rebuilds one more level for that type (nested self-references become `LazyRef` again). The frontend's schema is authoritative from then on: `send_soap` / `build_soap_envelope` receive it and serialize whatever depth was actually expanded; an unexpanded `LazyRef` pairs with `FormValue::Omitted` and emits nothing.
 
 `map_xsd_type` covers the subset (string/boolean/integer/decimal/double/date/dateTime/time/gYearMonth/base64Binary); xs: QName outside the list -> `XsdType::Other(name)` (UI treats as String with warning).
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRequestStore } from "../../store/requestStore";
+import { api } from "../../lib/api";
 import { methodAllowsBody } from "../../lib/request-types";
 import { UrlBar } from "./UrlBar";
 import { SoapUrlBar } from "./soap/SoapUrlBar";
@@ -22,6 +23,7 @@ export function RequestPanel() {
   const soap = req?.soap;
   const saveRequest = useRequestStore((s) => s.saveRequest);
   const setSoapValue = useRequestStore((s) => s.setSoapValue);
+  const setSoapSchema = useRequestStore((s) => s.setSoapSchema);
   const setSoapXmlDraft = useRequestStore((s) => s.setSoapXmlDraft);
   const commitSoapXml = useRequestStore((s) => s.commitSoapXml);
   const [soapView, setSoapView] = useState<SoapBodyView>("form");
@@ -85,6 +87,8 @@ export function RequestPanel() {
                   schema={soap.schema}
                   value={soap.value}
                   onChange={(next) => setSoapValue(activeId, next)}
+                  onSchemaChange={(next) => setSoapSchema(activeId, next)}
+                  expandNode={(node) => api.expandSchemaNode(soap.meta.wsdlUrl, node)}
                 />
               </div>
             </div>

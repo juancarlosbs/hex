@@ -51,6 +51,9 @@ pub enum NodeKind {
     Sequence(Vec<SchemaNode>),
     /// xs:choice: exactly ONE branch is selected.
     Choice(Vec<SchemaNode>),
+    /// Recursive named type (cycle or depth cap): NOT expanded inline. Carries the
+    /// type QName so the UI can expand one more level on demand (soap-engine.md §2.3).
+    LazyRef(QName),
     /// xs:any / anyType — outside the subset (ADR-010): falls back to raw editor for this subnode.
     Any,
 }
@@ -149,7 +152,7 @@ Reference mapping that `wsdl::xsd` implements (algorithm in `soap-engine.md`):
 | `xs:attribute` | goes into `attributes` |
 | `xs:annotation/xs:documentation` | `doc` |
 | `xs:any` / `anyType` | `Any` |
-| recursive type | `Sequence`/`Choice` with lazy expansion + depth cap (marked) |
+| recursive type | `LazyRef(QName)` placeholder: lazy expansion on demand + depth cap + "recursive" badge |
 
 `SchemaNode` → UI widget mapping (dropdown, date picker, branch selector, repeatable group,
 collapsed optional): see `docs/ui.md`.

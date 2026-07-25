@@ -17,6 +17,9 @@ export function defaultFormValue(node: SchemaNode): FormValue {
   if (isRepeatable(node)) return { repeated: [] };
 
   if (node.kind === "any") return { raw: "" };
+  // Unexpanded recursive placeholder: nothing to fill (and nothing is emitted)
+  // until the user expands it on demand.
+  if ("lazyRef" in node.kind) return "omitted";
   if ("leaf" in node.kind) {
     const { default: def, fixed } = node.kind.leaf;
     return { leaf: fixed ?? def ?? "" };

@@ -9,6 +9,11 @@ interface SchemaNodeFieldProps {
   node: SchemaNode;
   value: FormValue;
   onChange: (value: FormValue) => void;
+  /** Replaces this node in the schema tree — used by on-demand expansion of
+   * recursive (lazyRef) nodes. Callers thread it down like onChange. */
+  onNodeChange?: (next: SchemaNode) => void;
+  /** Expands one level of a recursive (lazyRef) node (backend call). */
+  expand?: (node: SchemaNode) => Promise<SchemaNode>;
   depth?: number;
   /** The root node's own sequence header is not shown — its children are the
    * top-level rows (mirrors the Pencil design). */
@@ -44,6 +49,10 @@ function isChoice(node: SchemaNode): boolean {
   return node.kind !== "any" && "choice" in node.kind;
 }
 
+function isLazyRef(node: SchemaNode): node is SchemaNode & { kind: { lazyRef: { local: string } } } {
+  return node.kind !== "any" && "lazyRef" in node.kind;
+}
+
 function isPlainSequence(node: SchemaNode): boolean {
   return node.occurs.min >= 1 && !isRepeatable(node) && !node.nillable && isSequence(node);
 }
@@ -59,6 +68,7 @@ function presentDefault(node: SchemaNode): FormValue {
  * optional and repeatable cardinality — used to seed a single repeated item. */
 function kindDefault(node: SchemaNode): FormValue {
   if (node.kind === "any") return { raw: "" };
+  if ("lazyRef" in node.kind) return "omitted"; // unexpanded recursive: nothing to fill yet
   if ("leaf" in node.kind) {
     const { default: def, fixed } = node.kind.leaf;
     return { leaf: fixed ?? def ?? "" };
@@ -74,6 +84,7 @@ function hasChevron(node: SchemaNode): boolean {
 }
 
 function typeText(node: SchemaNode): string {
+  if (isLazyRef(node)) return node.kind.lazyRef.local;
   if (isRepeatable(node)) {
     const { max } = node.occurs;
     return `maxOccurs=${max === "unbounded" ? "unbounded" : max.bounded}`;
@@ -151,6 +162,14 @@ function FieldLeft({
           optional
         </span>
       )}
+      {isLazyRef(node) && (
+        <span
+          className="flex items-center px-[6px] py-[2px] rounded-full border text-[10px] leading-none shrink-0"
+          style={{ borderColor: "var(--color-soap-op)", color: "var(--color-soap-op)" }}
+        >
+          recursive
+        </span>
+      )}
     </div>
   );
 }
@@ -167,7 +186,14 @@ function RightCell({ control, trailing }: { control?: ReactNode; trailing?: Reac
 
 /** Renders the sequence children as flattened rows (no header for the sequence
  * itself). Shared by the root and by nested sequence/choice-branch headers. */
-function SequenceChildren({ node, value, onChange, depth }: SchemaNodeFieldProps & { depth: number }) {
+function SequenceChildren({
+  node,
+  value,
+  onChange,
+  onNodeChange,
+  expand,
+  depth,
+}: SchemaNodeFieldProps & { depth: number }) {
   const children = isSequence(node) ? node.kind.sequence : [];
   const values =
     typeof value === "object" && value !== null && "sequence" in value ? value.sequence : [];
@@ -179,6 +205,10 @@ function SequenceChildren({ node, value, onChange, depth }: SchemaNodeFieldProps
           node={child}
           value={values[i]}
           depth={depth}
+          expand={expand}
+          onNodeChange={(n) =>
+            onNodeChange?.({ ...node, kind: { sequence: children.map((c, j) => (j === i ? n : c)) } })
+          }
           onChange={(v) => onChange({ sequence: values.map((it, j) => (j === i ? v : it)) })}
         />
       ))}
@@ -220,6 +250,54 @@ function ChoiceSegments({
   );
 }
 
+/** An unexpanded recursive node: badge + on-demand expansion (differentiator #1
+ * stays usable on self-referencing XSD types without infinite trees). */
+function LazyRefRow({ node, onChange, onNodeChange, expand, depth, lead, optional, trailing }: RowProps) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canExpand = expand !== undefined && onNodeChange !== undefined;
+  async function onExpand() {
+    if (!expand || !onNodeChange) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const expanded = await expand(node);
+      onNodeChange(expanded);
+      onChange(defaultFormValue(expanded));
+    } catch (e) {
+      setError(String(e));
+      setBusy(false);
+    }
+  }
+  return (
+    <RowShell depth={depth}>
+      <FieldLeft node={node} lead={lead} optional={optional} />
+      <RightCell
+        control={
+          <div className="flex items-center gap-2 min-w-0">
+            {error && (
+              <span className="text-[11px] text-destructive truncate" title={error}>
+                {error}
+              </span>
+            )}
+            <button
+              type="button"
+              aria-label={`expand ${node.name}`}
+              onClick={onExpand}
+              disabled={busy || !canExpand}
+              className="flex items-center gap-[6px] px-[10px] py-[5px] rounded-[6px] border text-[12px] font-mono cursor-pointer disabled:opacity-50 disabled:cursor-default shrink-0"
+              style={{ borderColor: "var(--color-soap-op)", color: "var(--color-soap-op)" }}
+            >
+              <Plus size={13} /> {busy ? "Expanding…" : "Expand"}
+            </button>
+          </div>
+        }
+        trailing={trailing}
+      />
+    </RowShell>
+  );
+}
+
 function AnyRow({ node, value, onChange, depth, lead, optional, trailing }: RowProps) {
   const raw = typeof value === "object" && value !== null && "raw" in value ? value.raw : "";
   return (
@@ -258,7 +336,7 @@ function LeafRow({ node, value, onChange, depth, lead, optional, trailing }: Row
   );
 }
 
-function SequenceRows({ node, value, onChange, depth, lead, optional, trailing }: RowProps) {
+function SequenceRows({ node, value, onChange, onNodeChange, expand, depth, lead, optional, trailing }: RowProps) {
   const [open, setOpen] = useState(true);
   return (
     <>
@@ -271,12 +349,21 @@ function SequenceRows({ node, value, onChange, depth, lead, optional, trailing }
         />
         <RightCell trailing={trailing} />
       </RowShell>
-      {open && <SequenceChildren node={node} value={value} onChange={onChange} depth={depth + 1} />}
+      {open && (
+        <SequenceChildren
+          node={node}
+          value={value}
+          onChange={onChange}
+          onNodeChange={onNodeChange}
+          expand={expand}
+          depth={depth + 1}
+        />
+      )}
     </>
   );
 }
 
-function ChoiceRows({ node, value, onChange, depth, lead, optional, trailing }: RowProps) {
+function ChoiceRows({ node, value, onChange, onNodeChange, expand, depth, lead, optional, trailing }: RowProps) {
   const [open, setOpen] = useState(true);
   const branches = node.kind !== "any" && "choice" in node.kind ? node.kind.choice : [];
   const choiceValue =
@@ -286,6 +373,11 @@ function ChoiceRows({ node, value, onChange, depth, lead, optional, trailing }: 
   const selected = branches[choiceValue.branch];
   const onBranchChange = (v: FormValue) =>
     onChange({ choice: { branch: choiceValue.branch, value: v } });
+  const onBranchNode = (n: SchemaNode) =>
+    onNodeChange?.({
+      ...node,
+      kind: { choice: branches.map((b, j) => (j === choiceValue.branch ? n : b)) },
+    });
   return (
     <>
       <RowShell depth={depth} fill>
@@ -302,9 +394,23 @@ function ChoiceRows({ node, value, onChange, depth, lead, optional, trailing }: 
       </RowShell>
       {open &&
         (isPlainSequence(selected) ? (
-          <SequenceChildren node={selected} value={choiceValue.value} onChange={onBranchChange} depth={depth + 1} />
+          <SequenceChildren
+            node={selected}
+            value={choiceValue.value}
+            onChange={onBranchChange}
+            onNodeChange={onBranchNode}
+            expand={expand}
+            depth={depth + 1}
+          />
         ) : (
-          <SchemaNodeField node={selected} value={choiceValue.value} onChange={onBranchChange} depth={depth + 1} />
+          <SchemaNodeField
+            node={selected}
+            value={choiceValue.value}
+            onChange={onBranchChange}
+            onNodeChange={onBranchNode}
+            expand={expand}
+            depth={depth + 1}
+          />
         ))}
     </>
   );
@@ -315,12 +421,13 @@ function ChoiceRows({ node, value, onChange, depth, lead, optional, trailing }: 
 function KindRows(props: RowProps) {
   const { node } = props;
   if (node.kind === "any") return <AnyRow {...props} />;
+  if ("lazyRef" in node.kind) return <LazyRefRow {...props} />;
   if ("leaf" in node.kind) return <LeafRow {...props} />;
   if ("sequence" in node.kind) return <SequenceRows {...props} />;
   return <ChoiceRows {...props} />;
 }
 
-function RepeatableRows({ node, value, onChange, depth, lead, optional }: RowProps) {
+function RepeatableRows({ node, value, onChange, onNodeChange, expand, depth, lead, optional }: RowProps) {
   const [open, setOpen] = useState(true);
   const items =
     typeof value === "object" && value !== null && "repeated" in value ? value.repeated : [];
@@ -342,6 +449,8 @@ function RepeatableRows({ node, value, onChange, depth, lead, optional }: RowPro
               key={i}
               node={node}
               value={item}
+              onNodeChange={onNodeChange}
+              expand={expand}
               depth={depth + 1}
               lead={
                 <span className="px-[7px] py-[2px] rounded-[4px] bg-secondary text-[12px] font-mono text-foreground shrink-0">
@@ -378,9 +487,20 @@ function RepeatableRows({ node, value, onChange, depth, lead, optional }: RowPro
   );
 }
 
-function PresentRows({ node, value, onChange, depth, lead, optional }: RowProps) {
+function PresentRows({ node, value, onChange, onNodeChange, expand, depth, lead, optional }: RowProps) {
   if (isRepeatable(node)) {
-    return <RepeatableRows node={node} value={value} onChange={onChange} depth={depth} lead={lead} optional={optional} />;
+    return (
+      <RepeatableRows
+        node={node}
+        value={value}
+        onChange={onChange}
+        onNodeChange={onNodeChange}
+        expand={expand}
+        depth={depth}
+        lead={lead}
+        optional={optional}
+      />
+    );
   }
 
   if (node.nillable) {
@@ -406,16 +526,26 @@ function PresentRows({ node, value, onChange, depth, lead, optional }: RowProps)
       );
     }
     return (
-      <KindRows node={node} value={value} onChange={onChange} depth={depth} lead={lead} optional={optional} trailing={nilToggle} />
+      <KindRows node={node} value={value} onChange={onChange} onNodeChange={onNodeChange} expand={expand} depth={depth} lead={lead} optional={optional} trailing={nilToggle} />
     );
   }
 
-  return <KindRows node={node} value={value} onChange={onChange} depth={depth} lead={lead} optional={optional} />;
+  return <KindRows node={node} value={value} onChange={onChange} onNodeChange={onNodeChange} expand={expand} depth={depth} lead={lead} optional={optional} />;
 }
 
-export function SchemaNodeField({ node, value, onChange, depth = 0, root = false }: SchemaNodeFieldProps) {
+export function SchemaNodeField({ node, value, onChange, onNodeChange, expand, depth = 0, root = false }: SchemaNodeFieldProps) {
   if (root && isPlainSequence(node)) {
-    return <SequenceChildren node={node} value={value} onChange={onChange} depth={depth} />;
+    return (
+      <SequenceChildren node={node} value={value} onChange={onChange} onNodeChange={onNodeChange} expand={expand} depth={depth} />
+    );
+  }
+
+  // Unexpanded recursive node: cardinality UI only appears after expansion —
+  // until then the row is just badge + Expand.
+  if (isLazyRef(node)) {
+    return (
+      <LazyRefRow node={node} value={value} onChange={onChange} onNodeChange={onNodeChange} expand={expand} depth={depth} />
+    );
   }
 
   if (node.occurs.min === 0) {

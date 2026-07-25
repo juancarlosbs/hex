@@ -42,6 +42,13 @@ describe("defaultFormValue", () => {
     const node: SchemaNode = { ...leaf("Root"), kind: "any" };
     expect(defaultFormValue(node)).toEqual({ raw: "" });
   });
+  it("unexpanded recursive (lazyRef) → omitted even when required", () => {
+    const node: SchemaNode = {
+      ...leaf("next"),
+      kind: { lazyRef: { namespace: "urn:t", local: "Node" } },
+    };
+    expect(defaultFormValue(node)).toEqual("omitted");
+  });
 });
 
 describe("setLeafAt", () => {

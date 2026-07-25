@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { SchemaForm } from "./SchemaForm";
 import type { SchemaNode } from "../../../lib/api";
 
@@ -90,6 +90,47 @@ describe("SchemaForm", () => {
     expect(screen.getByLabelText("field")).toBeTruthy();
     fireEvent.click(screen.getByLabelText("toggle Group"));
     expect(screen.queryByLabelText("field")).toBeNull();
+  });
+
+  it("shows a recursive badge and expands a lazyRef node on demand", async () => {
+    const onChange = vi.fn();
+    const onSchemaChange = vi.fn();
+    const lazyNext: SchemaNode = {
+      name: "next", namespace: null, occurs: { min: 0, max: { bounded: 1 } }, nillable: false,
+      doc: "recursive: expand on demand", attributes: [],
+      kind: { lazyRef: { namespace: "urn:t", local: "Node" } },
+    };
+    const schema: SchemaNode = {
+      name: "Root", namespace: null, occurs: { min: 1, max: { bounded: 1 } }, nillable: false,
+      doc: null, attributes: [],
+      kind: { sequence: [lazyNext] },
+    };
+    const expanded: SchemaNode = {
+      ...lazyNext,
+      doc: null,
+      kind: { sequence: [{
+        name: "value", namespace: null, occurs: { min: 1, max: { bounded: 1 } }, nillable: false,
+        doc: null, attributes: [], kind: { leaf: { xsdType: "string", enumValues: [], default: null, fixed: null } },
+      }] },
+    };
+    const expand = vi.fn().mockResolvedValue(expanded);
+
+    render(
+      <SchemaForm
+        schema={schema}
+        value={{ sequence: ["omitted"] }}
+        onChange={onChange}
+        onSchemaChange={onSchemaChange}
+        expandNode={expand}
+      />
+    );
+    expect(screen.getByText("recursive")).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("expand next"));
+    await waitFor(() => expect(onSchemaChange).toHaveBeenCalled());
+    expect(expand).toHaveBeenCalledWith(lazyNext);
+    expect(onSchemaChange).toHaveBeenCalledWith({ ...schema, kind: { sequence: [expanded] } });
+    expect(onChange).toHaveBeenCalledWith({ sequence: ["omitted"] }); // min=0 → still omitted until user fills
   });
 
   it("repeatable add appends a default item", () => {

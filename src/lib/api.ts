@@ -77,23 +77,19 @@ export const api = {
   getOperationSchema: (wsdlUrl: string, inputElement: QName) =>
     unwrap(commands.getOperationSchema(wsdlUrl, inputElement)),
 
+  /** Expand one level of a recursive (lazyRef) schema node on demand. */
+  expandSchemaNode: (wsdlUrl: string, node: SchemaNode) =>
+    unwrap(commands.expandSchemaNode(wsdlUrl, node)),
+
   sendSoap: (spec: {
-    wsdlUrl: string;
-    inputElement: QName;
+    schema: SchemaNode;
     endpoint: string;
     soapAction: string;
     soapVersion: string;
     value: FormValue;
   }) =>
     unwrap(
-      commands.sendSoap(
-        spec.wsdlUrl,
-        spec.inputElement,
-        spec.endpoint,
-        spec.soapAction,
-        spec.soapVersion,
-        spec.value,
-      ),
+      commands.sendSoap(spec.schema, spec.endpoint, spec.soapAction, spec.soapVersion, spec.value),
     ),
 
   buildSoapEnvelope: (spec: {

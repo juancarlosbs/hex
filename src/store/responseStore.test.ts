@@ -90,8 +90,39 @@ describe("send", () => {
     expect(req.body.json).toBe('{"a":1}');
   });
 
-  it("calls sendSoap with the meta + value when the request is a SOAP operation", async () => {
+  it("calls sendSoap with the loaded schema + value when the request is a SOAP operation", async () => {
     vi.mocked(api.sendSoap).mockResolvedValue(RESP);
+    const req = request();
+    const schema = {
+      name: "Op", namespace: "ns", occurs: { min: 1, max: { bounded: 1 } }, nillable: false,
+      doc: null, attributes: [],
+      kind: { leaf: { xsdType: "string" as const, enumValues: [], default: null, fixed: null } },
+    };
+    req.soap = {
+      meta: {
+        wsdlUrl: "https://example.com/service?wsdl",
+        inputElement: { namespace: "ns", local: "Op" },
+        endpoint: "https://example.com/service",
+        soapAction: "urn:Op",
+        soapVersion: "1.1",
+      },
+      schema,
+      value: { leaf: null },
+      xmlDraft: null,
+    };
+    await useResponseStore.getState().send(req);
+    expect(api.sendSoap).toHaveBeenCalledWith({
+      schema,
+      endpoint: "https://example.com/service",
+      soapAction: "urn:Op",
+      soapVersion: "1.1",
+      value: req.soap.value,
+    });
+    expect(api.sendRequest).not.toHaveBeenCalled();
+    expect(useResponseStore.getState().responses.r1).toEqual({ state: "done", response: RESP });
+  });
+
+  it("errors without sending when the SOAP schema is not loaded yet", async () => {
     const req = request();
     req.soap = {
       meta: {
@@ -106,9 +137,11 @@ describe("send", () => {
       xmlDraft: null,
     };
     await useResponseStore.getState().send(req);
-    expect(api.sendSoap).toHaveBeenCalledWith({ ...req.soap.meta, value: req.soap.value });
-    expect(api.sendRequest).not.toHaveBeenCalled();
-    expect(useResponseStore.getState().responses.r1).toEqual({ state: "done", response: RESP });
+    expect(api.sendSoap).not.toHaveBeenCalled();
+    expect(useResponseStore.getState().responses.r1).toEqual({
+      state: "error",
+      error: "operation schema is not loaded yet",
+    });
   });
 
   it("calls sendSoapRaw with the edited envelope when xmlDraft is set", async () => {

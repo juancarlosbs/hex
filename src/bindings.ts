@@ -109,9 +109,26 @@ async getOperationSchema(wsdlUrl: string, inputElement: QName) : Promise<Result<
     else return { status: "error", error: e  as any };
 }
 },
-async sendSoap(wsdlUrl: string, inputElement: QName, endpoint: string, soapAction: string, soapVersion: string, value: FormValue) : Promise<Result<HttpResponse, string>> {
+/**
+ * Expand one level of a recursive placeholder (`NodeKind::LazyRef`) in the
+ * operation schema. The frontend replaces the placeholder with the returned
+ * subtree; nested self-references stay lazy for further on-demand expansion.
+ */
+async expandSchemaNode(wsdlUrl: string, node: SchemaNode) : Promise<Result<SchemaNode, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("send_soap", { wsdlUrl, inputElement, endpoint, soapAction, soapVersion, value }) };
+    return { status: "ok", data: await TAURI_INVOKE("expand_schema_node", { wsdlUrl, node }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Sends the SOAP request from the schema the frontend already holds — which is
+ * authoritative: it carries any on-demand expansions of recursive types.
+ */
+async sendSoap(schema: SchemaNode, endpoint: string, soapAction: string, soapVersion: string, value: FormValue) : Promise<Result<HttpResponse, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("send_soap", { schema, endpoint, soapAction, soapVersion, value }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -177,7 +194,13 @@ export type FormValue = { leaf: string | null } | { sequence: FormValue[] } | { 
 export type HttpResponse = { status: number; statusText: string; timeMs: number; sizeBytes: number; headers: Partial<{ [key in string]: string }>; body: string; timing: TimingBreakdown; fault: SoapFault | null }
 export type KeyValueEntry = { id: string; key: string; value: string; description?: string | null; enabled: boolean; type?: string | null }
 export type MaxOccurs = { bounded: number } | "unbounded"
-export type NodeKind = { leaf: { xsdType: XsdType; enumValues: string[]; default: string | null; fixed: string | null } } | { sequence: SchemaNode[] } | { choice: SchemaNode[] } | "any"
+export type NodeKind = { leaf: { xsdType: XsdType; enumValues: string[]; default: string | null; fixed: string | null } } | { sequence: SchemaNode[] } | { choice: SchemaNode[] } | 
+/**
+ * Recursive named type (direct or transitive cycle, or depth cap hit):
+ * NOT expanded inline. Carries the type QName so the UI can expand one
+ * more level on demand (`wsdl::xsd::expand_lazy_node`).
+ */
+{ lazyRef: QName } | "any"
 export type Occurs = { min: number; max: MaxOccurs }
 export type OperationRef = { name: string; endpoint: string; soapAction: string; soapVersion: SoapVersion; inputElement: QName }
 export type QName = { namespace: string; local: string }

@@ -19,6 +19,19 @@ interface ResponseState {
   clearAll(): void;
 }
 
+/** Sends the form-backed SOAP request. The loaded schema is authoritative — it
+ * carries any on-demand expansions of recursive types the serializer needs. */
+function sendSoapForm(soap: NonNullable<OpenRequest["soap"]>) {
+  if (soap.schema === null) throw "operation schema is not loaded yet";
+  return api.sendSoap({
+    schema: soap.schema,
+    endpoint: soap.meta.endpoint,
+    soapAction: soap.meta.soapAction,
+    soapVersion: soap.meta.soapVersion,
+    value: soap.value,
+  });
+}
+
 export const useResponseStore = create<ResponseState>((set, get) => ({
   responses: {},
   seq: {},
@@ -41,7 +54,7 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
               soapAction: request.soap.meta.soapAction,
               soapVersion: request.soap.meta.soapVersion,
             })
-          : await api.sendSoap({ ...request.soap.meta, value: request.soap.value })
+          : await sendSoapForm(request.soap)
         : await api.sendRequest({
             method: request.method,
             url: request.url,

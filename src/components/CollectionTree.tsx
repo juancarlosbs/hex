@@ -17,7 +17,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { ChevronDown, Folder, Hexagon } from "lucide-react";
 import { cn } from "../lib/utils";
 import { CollectionNode } from "../lib/api";
-import { useCollectionStore } from "../store/collectionStore";
+import { findWsdlUrl, useCollectionStore } from "../store/collectionStore";
 import { useRequestStore } from "../store/requestStore";
 
 const METHOD_COLORS: Record<string, string> = {
@@ -34,7 +34,8 @@ type MenuAction =
   | { type: "rename"; path: string[]; currentName: string }
   | { type: "delete"; path: string[] }
   | { type: "newFolder"; parentPath: string[] }
-  | { type: "newRequest"; parentPath: string[] };
+  | { type: "newRequest"; parentPath: string[] }
+  | { type: "updateDefinition"; collectionId: string };
 
 function ContextMenu({
   x,
@@ -63,6 +64,7 @@ function ContextMenu({
     if (a.type === "rename") return "Rename";
     if (a.type === "delete") return "Delete";
     if (a.type === "newFolder") return "New Folder";
+    if (a.type === "updateDefinition") return "Update Definition";
     return "New Request";
   };
 
@@ -279,6 +281,7 @@ function SortableFolderItem({
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const rename = useCollectionStore((s) => s.rename);
   const remove = useCollectionStore((s) => s.remove);
+  const updateDefinition = useCollectionStore((s) => s.updateDefinition);
   const closeRequestsUnder = useRequestStore((s) => s.closeRequestsUnder);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: node.id });
@@ -297,11 +300,18 @@ function SortableFolderItem({
     }
     if (a.type === "newFolder") { setOpen(true); onPendingCreate(path, "folder"); }
     if (a.type === "newRequest") { setOpen(true); onPendingCreate(path, "request"); }
+    if (a.type === "updateDefinition") updateDefinition(workspaceId, a.collectionId);
   }
+
+  // Update Definition applies to an imported service: a root collection with SOAP requests.
+  const isImportedService = path.length === 1 && findWsdlUrl(node) !== null;
 
   const menuActions: MenuAction[] = [
     { type: "newRequest", parentPath: path },
     { type: "newFolder", parentPath: path },
+    ...(isImportedService
+      ? [{ type: "updateDefinition", collectionId: node.id } satisfies MenuAction]
+      : []),
     { type: "rename", path, currentName: node.name },
     { type: "delete", path },
   ];
@@ -403,6 +413,7 @@ function SortableRequestItem({
   ];
 
   const isSoap = node.kind === "soap";
+  const isOrphan = node.kind === "soap" && node.orphan === true;
 
   return (
     <div
@@ -412,6 +423,7 @@ function SortableRequestItem({
         "flex items-center gap-2 rounded-[6px] px-2 py-[6px] cursor-pointer select-none",
         isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/50"
       )}
+      title={isOrphan ? "Operation no longer exists in the WSDL" : undefined}
       onClick={handleActivate}
       onContextMenu={handleContextMenu}
       {...attributes}
@@ -419,7 +431,7 @@ function SortableRequestItem({
     >
       {isSoap ? (
         <div className="w-10 flex justify-end shrink-0">
-          <Hexagon size={14} className="text-soap-op" />
+          <Hexagon size={14} className={isOrphan ? "text-sidebar-muted" : "text-soap-op"} />
         </div>
       ) : (
         <span
@@ -438,7 +450,13 @@ function SortableRequestItem({
           onCancel={() => setRenaming(false)}
         />
       ) : (
-        <span className={cn("text-[12px] font-mono", isActive ? "text-foreground" : "text-sidebar-muted")}>
+        <span
+          className={cn(
+            "text-[12px] font-mono",
+            isActive ? "text-foreground" : "text-sidebar-muted",
+            isOrphan && "line-through opacity-60"
+          )}
+        >
           {node.name}
         </span>
       )}

@@ -1,9 +1,16 @@
 import { create } from "zustand";
-import { api, CollectionNode, RequestKind } from "../lib/api";
+import { api, CollectionNode, OperationDiff, RequestKind } from "../lib/api";
+
+export type UpdateDefinitionStatus =
+  | { state: "idle" }
+  | { state: "updating" }
+  | { state: "done"; summary: string }
+  | { state: "error"; message: string };
 
 interface CollectionState {
   collections: CollectionNode[];
   activeRequestId: string | null;
+  updateStatus: UpdateDefinitionStatus;
   load: (workspaceId: string) => Promise<void>;
   addCollection: (workspaceId: string, name: string) => Promise<void>;
   addFolder: (workspaceId: string, parentPath: string[], name: string) => Promise<void>;
@@ -13,11 +20,14 @@ interface CollectionState {
   reorder: (workspaceId: string, parentPath: string[], orderedIds: string[]) => Promise<void>;
   updateRequestMeta: (path: string[], method: string, url: string) => void;
   setActiveRequest: (id: string | null) => void;
+  updateDefinition: (workspaceId: string, collectionId: string) => Promise<void>;
+  updateAllDefinitions: (workspaceId: string) => Promise<void>;
 }
 
 export const useCollectionStore = create<CollectionState>((set, get) => ({
   collections: [],
   activeRequestId: null,
+  updateStatus: { state: "idle" },
 
   async load(workspaceId) {
     const collections = await api.listCollections(workspaceId);
@@ -93,7 +103,45 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   setActiveRequest(id) {
     set({ activeRequestId: id });
   },
+
+  async updateDefinition(workspaceId, collectionId) {
+    const col = get().collections.find((c) => c.id === collectionId);
+    const wsdlUrl = col ? findWsdlUrl(col) : null;
+    if (!wsdlUrl) return;
+    set({ updateStatus: { state: "updating" } });
+    try {
+      const diff = await api.updateWsdlDefinition(workspaceId, collectionId, wsdlUrl);
+      await get().load(workspaceId);
+      set({ updateStatus: { state: "done", summary: diffSummary(diff) } });
+    } catch (e) {
+      set({ updateStatus: { state: "error", message: String(e) } });
+    }
+  },
+
+  async updateAllDefinitions(workspaceId) {
+    // ponytail: sequential, last summary wins — typical workspace has one service
+    for (const col of get().collections) {
+      if (!findWsdlUrl(col)) continue;
+      await get().updateDefinition(workspaceId, col.id);
+      if (get().updateStatus.state === "error") return;
+    }
+  },
 }));
+
+/** First SOAP descendant's WSDL URL — a collection with one is an imported service. */
+export function findWsdlUrl(node: CollectionNode): string | null {
+  if (node.type === "request") return node.kind === "soap" ? node.wsdlUrl : null;
+  for (const child of node.children) {
+    const url = findWsdlUrl(child);
+    if (url) return url;
+  }
+  return null;
+}
+
+function diffSummary(d: OperationDiff): string {
+  if (!d.added.length && !d.removed.length && !d.changed.length) return "Up to date";
+  return `${d.added.length} added · ${d.removed.length} removed · ${d.changed.length} changed`;
+}
 
 // ── Tree mutation helpers ─────────────────────────────────────────────────────
 

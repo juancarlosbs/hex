@@ -20,6 +20,7 @@ export type {
   MaxOccurs,
   NodeKind,
   Occurs,
+  OperationDiff,
   RequestContent,
   RequestKind,
   SchemaNode,
@@ -73,6 +74,9 @@ export const api = {
 
   confirmWsdlImport: (workspaceId: string, preview: WsdlImportPreview) =>
     unwrap(commands.confirmWsdlImport(workspaceId, preview)),
+
+  updateWsdlDefinition: (workspaceId: string, collectionId: string, wsdlUrl: string) =>
+    unwrap(commands.updateWsdlDefinition(workspaceId, collectionId, wsdlUrl)),
 
   getOperationSchema: (wsdlUrl: string, inputElement: QName) =>
     unwrap(commands.getOperationSchema(wsdlUrl, inputElement)),

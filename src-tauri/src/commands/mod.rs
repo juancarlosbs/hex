@@ -145,34 +145,63 @@ async fn fetch_text(client: &reqwest::Client, url: &str) -> Result<String, Strin
     resp.text().await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn import_wsdl(url: String) -> Result<WsdlImportPreview, String> {
+/// Shared F2 pipeline: fetch the WSDL, parse it, and resolve the full schema
+/// closure up front so failures surface with WHICH url failed and why —
+/// never a silent partial import. Used by import and Update Definition (F6).
+async fn fetch_parse_resolve(url: &str) -> Result<wsdl::parse::WsdlDocument, String> {
     let client = http_client()?;
     let fetch = |u: String| {
         let client = client.clone();
         async move { fetch_text(&client, &u).await }
     };
 
-    let xml = fetch(url.clone()).await.map_err(|message| {
+    let xml = fetch(url.to_string()).await.map_err(|message| {
         wsdl::error::WsdlError::Fetch {
-            url: url.clone(),
+            url: url.to_string(),
             message,
         }
         .to_string()
     })?;
-    let parsed = wsdl::parse::parse(&url, &xml).map_err(|e| e.to_string())?;
-    // SchemaSet discarded in slice 1: resolve runs to validate the full schema
-    // closure up front; slice 2 (xsd -> SchemaNode) consumes it.
-    wsdl::resolve::resolve(&url, &xml, fetch)
+    let parsed = wsdl::parse::parse(url, &xml).map_err(|e| e.to_string())?;
+    // SchemaSet discarded here: resolve runs to validate the full schema
+    // closure up front; get_operation_schema/send_soap rebuild it on demand.
+    wsdl::resolve::resolve(url, &xml, fetch)
         .await
         .map_err(|e| e.to_string())?;
+    Ok(parsed)
+}
 
+#[tauri::command]
+#[specta::specta]
+pub async fn import_wsdl(url: String) -> Result<WsdlImportPreview, String> {
+    let parsed = fetch_parse_resolve(&url).await?;
     Ok(WsdlImportPreview {
         service_name: parsed.service_name,
         wsdl_url: url,
         operations: parsed.operations,
     })
+}
+
+/// Update Definition (product.md F6): re-fetch the WSDL through the same
+/// pipeline as import, then diff + apply against the imported collection.
+#[tauri::command]
+#[specta::specta]
+pub async fn update_wsdl_definition(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    collection_id: String,
+    wsdl_url: String,
+) -> Result<crate::domain::wsdl::OperationDiff, String> {
+    let parsed = fetch_parse_resolve(&wsdl_url).await?;
+    let dir = data_dir(&app)?;
+    collection::apply_wsdl_update(
+        &dir,
+        &workspace_id,
+        &collection_id,
+        &wsdl_url,
+        &parsed.operations,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -205,6 +234,7 @@ pub fn confirm_wsdl_import(
                 soap_action: Some(op.soap_action.clone()),
                 soap_version: Some(version.to_string()),
                 input_element: Some(op.input_element.clone()),
+                orphan: None,
             },
         )
         .map_err(|e| e.to_string())?;

@@ -30,6 +30,26 @@ beforeEach(() => {
   useCollectionStore.setState({ collections: [], activeRequestId: null });
 });
 
+describe("CollectionTree — orphaned SOAP operation (F6)", () => {
+  it("renders an orphan with strikethrough and explanatory title", () => {
+    useCollectionStore.setState({ collections: [{ ...soapNode, orphan: true }] });
+
+    render(<CollectionTree workspaceId="w1" />);
+
+    const name = screen.getByText("AddOperation");
+    expect(name.className).toContain("line-through");
+    expect(screen.getByTitle("Operation no longer exists in the WSDL")).toBeTruthy();
+  });
+
+  it("renders a non-orphan without strikethrough", () => {
+    useCollectionStore.setState({ collections: [soapNode] });
+
+    render(<CollectionTree workspaceId="w1" />);
+
+    expect(screen.getByText("AddOperation").className).not.toContain("line-through");
+  });
+});
+
 describe("CollectionTree — opening a request node", () => {
   it("opens a SOAP operation on click (regression: was gated to kind==='rest')", () => {
     const openRequest = vi.fn();

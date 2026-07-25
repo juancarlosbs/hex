@@ -1,13 +1,18 @@
 import { useRef, useState } from "react";
 import { FolderPlus, Globe, Plus, RefreshCw, Search } from "lucide-react";
+import { cn } from "../lib/utils";
 import { CollectionTree, CollectionTreeHandle } from "./CollectionTree";
 import { ImportWsdlModal } from "./ImportWsdlModal";
+import { useCollectionStore } from "../store/collectionStore";
 import { useWorkspaceStore } from "../store/workspaceStore";
 
 export function Sidebar() {
   const workspaceId = useWorkspaceStore((s) => s.activeId);
   const treeRef = useRef<CollectionTreeHandle>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const updateStatus = useCollectionStore((s) => s.updateStatus);
+  const updateAllDefinitions = useCollectionStore((s) => s.updateAllDefinitions);
+  const updating = updateStatus.state === "updating";
 
   return (
     <aside
@@ -58,10 +63,22 @@ export function Sidebar() {
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-center gap-2 px-3 py-[10px] border-t border-border cursor-pointer hover:text-foreground">
-        <RefreshCw size={13} className="text-sidebar-muted" />
-        <span className="text-[12px] font-medium text-sidebar-muted">
-          Update Definition
+      <div
+        className="flex items-center justify-center gap-2 px-3 py-[10px] border-t border-border cursor-pointer hover:text-foreground"
+        onClick={() => { if (!updating) updateAllDefinitions(workspaceId); }}
+      >
+        <RefreshCw size={13} className={cn("text-sidebar-muted", updating && "animate-spin")} />
+        <span
+          className={cn(
+            "text-[12px] font-medium truncate",
+            updateStatus.state === "error" ? "text-destructive" : "text-sidebar-muted"
+          )}
+          title={updateStatus.state === "error" ? updateStatus.message : undefined}
+        >
+          {updateStatus.state === "updating" && "Updating definitions…"}
+          {updateStatus.state === "done" && updateStatus.summary}
+          {updateStatus.state === "error" && updateStatus.message}
+          {updateStatus.state === "idle" && "Update Definition"}
         </span>
       </div>
 

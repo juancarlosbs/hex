@@ -101,6 +101,18 @@ async confirmWsdlImport(workspaceId: string, preview: WsdlImportPreview) : Promi
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Update Definition (product.md F6): re-fetch the WSDL through the same
+ * pipeline as import, then diff + apply against the imported collection.
+ */
+async updateWsdlDefinition(workspaceId: string, collectionId: string, wsdlUrl: string) : Promise<Result<OperationDiff, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_wsdl_definition", { workspaceId, collectionId, wsdlUrl }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getOperationSchema(wsdlUrl: string, inputElement: QName) : Promise<Result<SchemaNode, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_operation_schema", { wsdlUrl, inputElement }) };
@@ -179,12 +191,29 @@ export type KeyValueEntry = { id: string; key: string; value: string; descriptio
 export type MaxOccurs = { bounded: number } | "unbounded"
 export type NodeKind = { leaf: { xsdType: XsdType; enumValues: string[]; default: string | null; fixed: string | null } } | { sequence: SchemaNode[] } | { choice: SchemaNode[] } | "any"
 export type Occurs = { min: number; max: MaxOccurs }
+/**
+ * Result of diffing the operations of a re-fetched WSDL against the ones
+ * currently imported (product.md F6). Pure data — applying it is persistence.
+ */
+export type OperationDiff = { 
+/**
+ * Operations present in the fresh WSDL but not imported yet.
+ */
+added: OperationRef[]; 
+/**
+ * Names of imported operations that no longer exist in the fresh WSDL.
+ */
+removed: string[]; 
+/**
+ * Fresh version of operations whose metadata differs from the imported one.
+ */
+changed: OperationRef[] }
 export type OperationRef = { name: string; endpoint: string; soapAction: string; soapVersion: SoapVersion; inputElement: QName }
 export type QName = { namespace: string; local: string }
-export type RequestContent = ({ kind: "rest"; method: string; url: string } | { kind: "soap"; wsdlUrl: string; operation: string; endpoint?: string | null; soapAction?: string | null; soapVersion?: string | null; inputElement?: QName | null }) & { params?: KeyValueEntry[]; headers?: KeyValueEntry[]; body?: BodyData | null; auth?: AuthData | null }
-export type RequestFile = ({ kind: "rest"; method: string; url: string } | { kind: "soap"; wsdlUrl: string; operation: string; endpoint?: string | null; soapAction?: string | null; soapVersion?: string | null; inputElement?: QName | null }) & { id: string; name: string; params: KeyValueEntry[]; headers: KeyValueEntry[]; body?: BodyData | null; auth?: AuthData | null }
-export type RequestKind = { kind: "rest"; method: string; url: string } | { kind: "soap"; wsdlUrl: string; operation: string; endpoint?: string | null; soapAction?: string | null; soapVersion?: string | null; inputElement?: QName | null }
-export type RequestNode = ({ kind: "rest"; method: string; url: string } | { kind: "soap"; wsdlUrl: string; operation: string; endpoint?: string | null; soapAction?: string | null; soapVersion?: string | null; inputElement?: QName | null }) & { id: string; name: string }
+export type RequestContent = ({ kind: "rest"; method: string; url: string } | { kind: "soap"; wsdlUrl: string; operation: string; endpoint?: string | null; soapAction?: string | null; soapVersion?: string | null; inputElement?: QName | null; orphan?: boolean | null }) & { params?: KeyValueEntry[]; headers?: KeyValueEntry[]; body?: BodyData | null; auth?: AuthData | null }
+export type RequestFile = ({ kind: "rest"; method: string; url: string } | { kind: "soap"; wsdlUrl: string; operation: string; endpoint?: string | null; soapAction?: string | null; soapVersion?: string | null; inputElement?: QName | null; orphan?: boolean | null }) & { id: string; name: string; params: KeyValueEntry[]; headers: KeyValueEntry[]; body?: BodyData | null; auth?: AuthData | null }
+export type RequestKind = { kind: "rest"; method: string; url: string } | { kind: "soap"; wsdlUrl: string; operation: string; endpoint?: string | null; soapAction?: string | null; soapVersion?: string | null; inputElement?: QName | null; orphan?: boolean | null }
+export type RequestNode = ({ kind: "rest"; method: string; url: string } | { kind: "soap"; wsdlUrl: string; operation: string; endpoint?: string | null; soapAction?: string | null; soapVersion?: string | null; inputElement?: QName | null; orphan?: boolean | null }) & { id: string; name: string }
 /**
  * The shape of a SOAP operation input. Immutable tree derived from XSD.
  */

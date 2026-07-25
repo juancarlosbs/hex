@@ -5,6 +5,7 @@ vi.mock("../lib/api", () => ({
 }));
 
 import { useResponseStore } from "./responseStore";
+import { useEnvStore } from "./envStore";
 import { makeEmptyRequest } from "../lib/request-types";
 import { HttpResponse } from "../lib/response-types";
 import { api } from "../lib/api";
@@ -24,6 +25,7 @@ const request = () => makeEmptyRequest("r1", "R1", "GET", ["c1", "r1"]);
 
 beforeEach(() => {
   useResponseStore.setState({ responses: {}, seq: {} });
+  useEnvStore.setState({ environments: [], activeId: null });
   vi.clearAllMocks();
 });
 
@@ -46,14 +48,25 @@ describe("send", () => {
     req.url = "https://api.dev";
     req.method = "POST";
     await useResponseStore.getState().send(req);
-    expect(api.sendRequest).toHaveBeenCalledWith({
-      method: "POST",
-      url: "https://api.dev",
-      params: req.params,
-      headers: req.headers,
-      body: req.body,
-      auth: req.auth,
-    });
+    expect(api.sendRequest).toHaveBeenCalledWith(
+      {
+        method: "POST",
+        url: "https://api.dev",
+        params: req.params,
+        headers: req.headers,
+        body: req.body,
+        auth: req.auth,
+      },
+      null,
+    );
+  });
+
+  it("passes the active environment so Rust can interpolate {{var}}", async () => {
+    vi.mocked(api.sendRequest).mockResolvedValue(RESP);
+    const dev = { id: "development", name: "Development", variables: { host: "api.dev" } };
+    useEnvStore.setState({ environments: [dev], activeId: "development" });
+    await useResponseStore.getState().send(request());
+    expect(api.sendRequest).toHaveBeenCalledWith(expect.anything(), dev);
   });
 
   it("stores the error message on failure", async () => {
@@ -84,7 +97,8 @@ describe("send", () => {
     req.body = { mode: "json", json: '{"a":1}', form: [] };
     await useResponseStore.getState().send(req);
     expect(api.sendRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ body: { mode: "json", json: "", form: [] } })
+      expect.objectContaining({ body: { mode: "json", json: "", form: [] } }),
+      null,
     );
     // store body untouched
     expect(req.body.json).toBe('{"a":1}');
@@ -106,7 +120,11 @@ describe("send", () => {
       xmlDraft: null,
     };
     await useResponseStore.getState().send(req);
-    expect(api.sendSoap).toHaveBeenCalledWith({ ...req.soap.meta, value: req.soap.value });
+    expect(api.sendSoap).toHaveBeenCalledWith({
+      ...req.soap.meta,
+      value: req.soap.value,
+      environment: null,
+    });
     expect(api.sendRequest).not.toHaveBeenCalled();
     expect(useResponseStore.getState().responses.r1).toEqual({ state: "done", response: RESP });
   });
@@ -132,6 +150,7 @@ describe("send", () => {
       envelope: "<soapenv:Envelope>edited</soapenv:Envelope>",
       soapAction: "urn:Op",
       soapVersion: "1.2",
+      environment: null,
     });
     expect(api.sendSoap).not.toHaveBeenCalled();
   });

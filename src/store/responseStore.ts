@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { HttpResponse } from "../lib/response-types";
 import { OpenRequest, methodAllowsBody } from "../lib/request-types";
 import { api } from "../lib/api";
+import { activeEnvironment } from "./envStore";
 
 export type ResponseEntry =
   | { state: "loading" }
@@ -31,6 +32,9 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
       responses: { ...s.responses, [id]: { state: "loading" } },
     }));
 
+    // Rust interpolates {{var}} with this environment — authoritative at Send time.
+    const environment = activeEnvironment();
+
     let entry: ResponseEntry;
     try {
       const response = request.soap
@@ -40,18 +44,22 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
               envelope: request.soap.xmlDraft,
               soapAction: request.soap.meta.soapAction,
               soapVersion: request.soap.meta.soapVersion,
+              environment,
             })
-          : await api.sendSoap({ ...request.soap.meta, value: request.soap.value })
-        : await api.sendRequest({
-            method: request.method,
-            url: request.url,
-            params: request.params,
-            headers: request.headers,
-            body: methodAllowsBody(request.method)
-              ? request.body
-              : { mode: "json", json: "", form: [] },
-            auth: request.auth,
-          });
+          : await api.sendSoap({ ...request.soap.meta, value: request.soap.value, environment })
+        : await api.sendRequest(
+            {
+              method: request.method,
+              url: request.url,
+              params: request.params,
+              headers: request.headers,
+              body: methodAllowsBody(request.method)
+                ? request.body
+                : { mode: "json", json: "", form: [] },
+              auth: request.auth,
+            },
+            environment,
+          );
       entry = { state: "done", response };
     } catch (e) {
       entry = { state: "error", error: String(e) };

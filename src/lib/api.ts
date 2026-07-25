@@ -2,6 +2,7 @@
 // Components never call invoke directly — and never import bindings directly either.
 import { commands, type Result } from "../bindings";
 import type {
+  Environment as WireEnvironment,
   FormValue,
   QName,
   RequestContent,
@@ -10,6 +11,20 @@ import type {
   SendSpec,
   WsdlImportPreview,
 } from "../bindings";
+
+/** Generated `Environment` with `variables` normalized to a plain record
+ * (specta exports BTreeMap as an optional Partial; Rust never emits undefined). */
+export interface Environment {
+  id: string;
+  name: string;
+  variables: Record<string, string>;
+}
+
+const toEnvironment = (e: WireEnvironment): Environment => ({
+  id: e.id,
+  name: e.name,
+  variables: (e.variables ?? {}) as Record<string, string>,
+});
 
 // Re-export the generated types under the names the app already uses.
 export type {
@@ -67,7 +82,17 @@ export const api = {
   updateRequest: (workspaceId: string, path: string[], content: RequestContent) =>
     unwrap(commands.updateRequest(workspaceId, path, content)),
 
-  sendRequest: (spec: SendSpec) => unwrap(commands.sendRequest(spec)),
+  sendRequest: (spec: SendSpec, environment: Environment | null) =>
+    unwrap(commands.sendRequest(spec, environment)),
+
+  listEnvironments: async (workspaceId: string) =>
+    (await unwrap(commands.listEnvironments(workspaceId))).map(toEnvironment),
+
+  saveEnvironment: (workspaceId: string, environment: Environment) =>
+    unwrap(commands.saveEnvironment(workspaceId, environment)),
+
+  deleteEnvironment: (workspaceId: string, id: string) =>
+    unwrap(commands.deleteEnvironment(workspaceId, id)),
 
   importWsdl: (url: string) => unwrap(commands.importWsdl(url)),
 
@@ -84,6 +109,7 @@ export const api = {
     soapAction: string;
     soapVersion: string;
     value: FormValue;
+    environment: Environment | null;
   }) =>
     unwrap(
       commands.sendSoap(
@@ -93,6 +119,7 @@ export const api = {
         spec.soapAction,
         spec.soapVersion,
         spec.value,
+        spec.environment,
       ),
     ),
 
@@ -111,8 +138,17 @@ export const api = {
     envelope: string;
     soapAction: string;
     soapVersion: string;
+    environment: Environment | null;
   }) =>
-    unwrap(commands.sendSoapRaw(spec.endpoint, spec.envelope, spec.soapAction, spec.soapVersion)),
+    unwrap(
+      commands.sendSoapRaw(
+        spec.endpoint,
+        spec.envelope,
+        spec.soapAction,
+        spec.soapVersion,
+        spec.environment,
+      ),
+    ),
 
   parseSoapEnvelope: (spec: { envelope: string; schema: SchemaNode }) =>
     unwrap(commands.parseEnvelope(spec.envelope, spec.schema)),

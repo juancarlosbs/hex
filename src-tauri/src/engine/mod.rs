@@ -1,6 +1,7 @@
+use crate::domain::env::interpolate;
 use crate::persistence::collection::{AuthData, BodyData, KeyValueEntry};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 pub mod connector;
 pub mod deserialize;
@@ -53,6 +54,48 @@ fn enabled(list: &[KeyValueEntry]) -> impl Iterator<Item = &KeyValueEntry> {
 fn set_header(headers: &mut Vec<(String, String)>, name: &str, value: String) {
     headers.retain(|(k, _)| !k.eq_ignore_ascii_case(name));
     headers.push((name.to_string(), value));
+}
+
+/// Applies `{{var}}` interpolation to every user-authored field of the spec —
+/// URL, enabled params/headers, the active body mode, and auth — BEFORE the
+/// request is built. Rust is the authority here; the frontend only previews.
+pub fn apply_env(mut spec: SendSpec, vars: &BTreeMap<String, String>) -> Result<SendSpec, String> {
+    let subst = |s: &str| interpolate(s, vars).map_err(|e| e.to_string());
+    spec.url = subst(&spec.url)?;
+    for kv in spec.params.iter_mut().chain(spec.headers.iter_mut()) {
+        if kv.enabled {
+            kv.key = subst(&kv.key)?;
+            kv.value = subst(&kv.value)?;
+        }
+    }
+    match spec.body.mode.as_str() {
+        "json" => spec.body.json = subst(&spec.body.json)?,
+        "form-urlencoded" => {
+            for kv in spec.body.form.iter_mut() {
+                if kv.enabled {
+                    kv.key = subst(&kv.key)?;
+                    kv.value = subst(&kv.value)?;
+                }
+            }
+        }
+        _ => {}
+    }
+    spec.auth = match spec.auth {
+        AuthData::None => AuthData::None,
+        AuthData::Basic { username, password } => AuthData::Basic {
+            username: subst(&username)?,
+            password: subst(&password)?,
+        },
+        AuthData::Bearer { token } => AuthData::Bearer {
+            token: subst(&token)?,
+        },
+        AuthData::Apikey { key, value, add_to } => AuthData::Apikey {
+            key: subst(&key)?,
+            value: subst(&value)?,
+            add_to,
+        },
+    };
+    Ok(spec)
 }
 
 type BuiltRequest = (String, url::Url, Vec<(String, String)>, Vec<u8>);
@@ -242,6 +285,56 @@ mod tests {
             .iter()
             .filter(|(k, _)| k.eq_ignore_ascii_case(name))
             .count()
+    }
+
+    fn env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn apply_env_interpolates_url_headers_params_body_and_auth() {
+        let mut s = spec("https://{{host}}/users");
+        s.params = vec![kv("page", "{{page}}", true)];
+        s.headers = vec![kv("X-Trace", "{{trace}}", true)];
+        s.body.json = r#"{"host":"{{host}}"}"#.into();
+        s.auth = AuthData::Bearer {
+            token: "{{token}}".into(),
+        };
+        let vars = env(&[
+            ("host", "api.dev"),
+            ("page", "2"),
+            ("trace", "t1"),
+            ("token", "tok"),
+        ]);
+        let s = apply_env(s, &vars).unwrap();
+        assert_eq!(s.url, "https://api.dev/users");
+        assert_eq!(s.params[0].value, "2");
+        assert_eq!(s.headers[0].value, "t1");
+        assert_eq!(s.body.json, r#"{"host":"api.dev"}"#);
+        assert!(matches!(s.auth, AuthData::Bearer { token } if token == "tok"));
+    }
+
+    #[test]
+    fn apply_env_skips_disabled_rows_and_inactive_body() {
+        let mut s = spec("https://api.dev");
+        s.params = vec![kv("q", "{{missing}}", false)];
+        s.body.mode = "form-urlencoded".into();
+        s.body.json = "{{missing}}".into(); // inactive mode — never touched
+        s.body.form = vec![kv("a", "{{missing}}", false)];
+        let s = apply_env(s, &env(&[])).unwrap();
+        assert_eq!(s.params[0].value, "{{missing}}");
+        assert_eq!(s.body.form[0].value, "{{missing}}");
+    }
+
+    #[test]
+    fn apply_env_unknown_var_is_a_clear_error() {
+        let s = spec("https://{{host}}/x");
+        let err = apply_env(s, &env(&[])).unwrap_err();
+        assert!(err.contains("unknown environment variable"), "{err}");
+        assert!(err.contains("host"), "{err}");
     }
 
     #[test]

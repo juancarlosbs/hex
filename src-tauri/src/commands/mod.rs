@@ -111,12 +111,63 @@ pub fn update_request(
     collection::update_request(&dir, &workspace_id, path, content).map_err(|e| e.to_string())
 }
 
+use crate::domain::env::{self, Environment};
+
+/// Interpolates `{{var}}` when an environment is active; no environment leaves
+/// the text untouched (literals stay literal only in that case).
+fn interp(text: &str, environment: &Option<Environment>) -> Result<String, String> {
+    match environment {
+        Some(e) => env::interpolate(text, &e.variables).map_err(|e| e.to_string()),
+        None => Ok(text.to_string()),
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn send_request(
     spec: crate::engine::SendSpec,
+    environment: Option<Environment>,
 ) -> Result<crate::engine::HttpResponse, String> {
+    let spec = match &environment {
+        Some(e) => crate::engine::apply_env(spec, &e.variables)?,
+        None => spec,
+    };
     crate::engine::send(spec).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn list_environments(
+    app: tauri::AppHandle,
+    workspace_id: String,
+) -> Result<Vec<Environment>, String> {
+    let dir = data_dir(&app)?;
+    crate::persistence::environment::list_environments(&dir, &workspace_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn save_environment(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    environment: Environment,
+) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    crate::persistence::environment::save_environment(&dir, &workspace_id, &environment)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn delete_environment(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    id: String,
+) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    crate::persistence::environment::delete_environment(&dir, &workspace_id, &id)
+        .map_err(|e| e.to_string())
 }
 
 use crate::domain::wsdl::{OperationRef, SoapVersion};
@@ -252,7 +303,14 @@ pub async fn send_soap(
     soap_action: String,
     soap_version: String,
     value: FormValue,
+    environment: Option<Environment>,
 ) -> Result<engine::HttpResponse, String> {
+    let endpoint = interp(&endpoint, &environment)?;
+    let soap_action = interp(&soap_action, &environment)?;
+    let value = match &environment {
+        Some(e) => env::interpolate_form_value(&value, &e.variables).map_err(|e| e.to_string())?,
+        None => value,
+    };
     let client = http_client()?;
     let fetch = |u: String| {
         let client = client.clone();
@@ -310,7 +368,11 @@ pub async fn send_soap_raw(
     envelope: String,
     soap_action: String,
     soap_version: String,
+    environment: Option<Environment>,
 ) -> Result<engine::HttpResponse, String> {
+    let endpoint = interp(&endpoint, &environment)?;
+    let envelope = interp(&envelope, &environment)?;
+    let soap_action = interp(&soap_action, &environment)?;
     let meta = engine::serialize::soap_meta(&soap_version, &soap_action);
     engine::send_soap_envelope(&endpoint, envelope, meta).await
 }

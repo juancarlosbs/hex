@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, CornerDownLeft, Hexagon, X } from "lucide-react";
 import { useRequestStore } from "../../../store/requestStore";
 import { useResponseStore } from "../../../store/responseStore";
+import { useEnvStore } from "../../../store/envStore";
+import { hasPlaceholder, interpolatePreview } from "../../../lib/interpolate";
 
 interface SoapUrlBarProps {
   requestId: string;
@@ -16,6 +18,8 @@ export function SoapUrlBar({ requestId }: SoapUrlBarProps) {
   const loading = useResponseStore((s) => s.responses[requestId]?.state === "loading");
   const send = useResponseStore((s) => s.send);
   const cancel = useResponseStore((s) => s.cancel);
+
+  const activeEnv = useEnvStore((s) => s.environments.find((e) => e.id === s.activeId));
 
   const [versionOpen, setVersionOpen] = useState(false);
   const versionRef = useRef<HTMLDivElement>(null);
@@ -32,6 +36,12 @@ export function SoapUrlBar({ requestId }: SoapUrlBarProps) {
   if (!req?.soap) return null;
   const { endpoint, soapVersion } = req.soap.meta;
   const schemaLoading = req.soap.schema === null;
+
+  // Preview only — Rust re-interpolates (authoritatively) at Send time.
+  const endpointPreview =
+    activeEnv && hasPlaceholder(endpoint)
+      ? interpolatePreview(endpoint, activeEnv.variables)
+      : null;
 
   return (
     <div className="flex items-center gap-[10px] px-3 py-3 border-b border-border">
@@ -82,13 +92,24 @@ export function SoapUrlBar({ requestId }: SoapUrlBarProps) {
         )}
       </div>
 
-      <input
-        value={endpoint}
-        onChange={(e) => setSoapEndpoint(requestId, e.target.value)}
-        placeholder="https://api.example.com/ws/Service"
-        className="flex-1 min-w-0 px-[11px] py-[9px] text-[13px] bg-card border border-border rounded-[6px] text-foreground placeholder:text-muted outline-none focus:border-ring"
-        style={{ fontFamily: "var(--font-mono)" }}
-      />
+      <div className="flex-1 min-w-0 flex flex-col">
+        <input
+          value={endpoint}
+          onChange={(e) => setSoapEndpoint(requestId, e.target.value)}
+          placeholder="https://api.example.com/ws/Service"
+          className="w-full px-[11px] py-[9px] text-[13px] bg-card border border-border rounded-[6px] text-foreground placeholder:text-muted outline-none focus:border-ring"
+          style={{ fontFamily: "var(--font-mono)" }}
+        />
+        {endpointPreview !== null && endpointPreview !== endpoint && (
+          <span
+            className="px-[11px] pt-[3px] text-[11px] text-muted truncate"
+            style={{ fontFamily: "var(--font-mono)" }}
+            title={endpointPreview}
+          >
+            {endpointPreview}
+          </span>
+        )}
+      </div>
 
       <button
         type="button"

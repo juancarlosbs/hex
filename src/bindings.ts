@@ -77,9 +77,33 @@ async updateRequest(workspaceId: string, path: string[], content: RequestContent
     else return { status: "error", error: e  as any };
 }
 },
-async sendRequest(spec: SendSpec) : Promise<Result<HttpResponse, string>> {
+async sendRequest(spec: SendSpec, environment: Environment | null) : Promise<Result<HttpResponse, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("send_request", { spec }) };
+    return { status: "ok", data: await TAURI_INVOKE("send_request", { spec, environment }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listEnvironments(workspaceId: string) : Promise<Result<Environment[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_environments", { workspaceId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveEnvironment(workspaceId: string, environment: Environment) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_environment", { workspaceId, environment }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteEnvironment(workspaceId: string, id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_environment", { workspaceId, id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -109,9 +133,9 @@ async getOperationSchema(wsdlUrl: string, inputElement: QName) : Promise<Result<
     else return { status: "error", error: e  as any };
 }
 },
-async sendSoap(wsdlUrl: string, inputElement: QName, endpoint: string, soapAction: string, soapVersion: string, value: FormValue) : Promise<Result<HttpResponse, string>> {
+async sendSoap(wsdlUrl: string, inputElement: QName, endpoint: string, soapAction: string, soapVersion: string, value: FormValue, environment: Environment | null) : Promise<Result<HttpResponse, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("send_soap", { wsdlUrl, inputElement, endpoint, soapAction, soapVersion, value }) };
+    return { status: "ok", data: await TAURI_INVOKE("send_soap", { wsdlUrl, inputElement, endpoint, soapAction, soapVersion, value, environment }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -133,9 +157,9 @@ async buildSoapEnvelope(schema: SchemaNode, soapAction: string, soapVersion: str
  * Send a raw SOAP envelope edited by hand in the XML view, bypassing the form
  * serializer. Transport metadata still follows the selected SOAP version.
  */
-async sendSoapRaw(endpoint: string, envelope: string, soapAction: string, soapVersion: string) : Promise<Result<HttpResponse, string>> {
+async sendSoapRaw(endpoint: string, envelope: string, soapAction: string, soapVersion: string, environment: Environment | null) : Promise<Result<HttpResponse, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("send_soap_raw", { endpoint, envelope, soapAction, soapVersion }) };
+    return { status: "ok", data: await TAURI_INVOKE("send_soap_raw", { endpoint, envelope, soapAction, soapVersion, environment }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -169,6 +193,11 @@ export type Attribute = { name: string; xsdType: XsdType; required: boolean; enu
 export type AuthData = { type: "none" } | { type: "basic"; username: string; password: string } | { type: "bearer"; token: string } | { type: "apikey"; key: string; value: string; addTo: string }
 export type BodyData = { mode: string; json: string; form: KeyValueEntry[] }
 export type CollectionNode = { type: "folder"; id: string; name: string; children: CollectionNode[] } | ({ type: "request" } & RequestNode)
+/**
+ * An environment (dev/staging/prod) with its variables. Persisted one file per
+ * environment (persistence/environment.rs) and sent over IPC on Send.
+ */
+export type Environment = { id: string; name: string; variables?: Partial<{ [key in string]: string }> }
 /**
  * The instance the user filled in. Mirrors `NodeKind`; the serializer walks the
  * pair (SchemaNode, FormValue). See docs/domain-model.md §3.

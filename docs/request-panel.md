@@ -45,7 +45,7 @@ Closing / switching between multiple open requests isn't wired to the titlebar t
 | Control | Behavior |
 |---|---|
 | Method | Click to open the list, pick GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS. Color per token (`--color-method-*`). |
-| URL    | Free-form input; monospace. Environment interpolation (`{{var}}`) is not applied yet. |
+| URL    | Free-form input; monospace. Shows an interpolated preview when it contains `{{var}}`; Rust interpolates authoritatively at Send (`domain/env.rs`). |
 | Send   | UI only. Wiring to Rust `send_request` command lives in the engine plan. |
 
 ---
@@ -109,7 +109,6 @@ switching types resets fields on purpose.
 | JSON syntax highlighting | Swap textarea for `@uiw/react-codemirror` + `lang-json` (polish milestone) |
 | Titlebar tabs bound to `openRequests` | Titlebar refactor (currently static list in `Titlebar.tsx`) |
 | SOAP `SchemaForm` (Params tab replaced by schema-driven form) | Separate plan — see `docs/soap-engine.md` |
-| Env variable `{{var}}` interpolation | Domain layer (`domain/env.rs`); see `docs/domain-model.md` §6 |
 
 Anywhere the current code makes a deliberate compromise, it's marked with `// ponytail:`
 and points at the upgrade path.

@@ -50,7 +50,7 @@ describe("importWsdl", () => {
 
 describe("confirm", () => {
   it("confirms, reloads collections and resets to idle", async () => {
-    vi.mocked(api.confirmWsdlImport).mockResolvedValue(undefined);
+    vi.mocked(api.confirmWsdlImport).mockResolvedValue(null);
     vi.mocked(api.listCollections).mockResolvedValue([]);
     useWsdlImportStore.setState({ phase: { state: "preview", preview: PREVIEW } });
     await useWsdlImportStore.getState().confirm("w1");

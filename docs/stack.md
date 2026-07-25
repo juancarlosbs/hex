@@ -136,7 +136,15 @@ vitest  @testing-library/react  @testing-library/user-event  jsdom
 - **Pin `specta`/`tauri-specta` with `=`** — they're in RC, breaking between versions. New builder:
   `tauri_specta::Builder::<Wry>::new().commands(collect_commands![...]).events(collect_events![...])`
   and `.export(specta_typescript::Typescript::default(), "../src/bindings.ts")` under `#[cfg(debug_assertions)]`.
+  Current pins: `tauri-specta =2.0.0-rc.21` + `specta =2.0.0-rc.22` + `specta-typescript =0.0.9` —
+  rc.24+ requires rustc ≥1.91 (`debug_closure_helpers`); don't bump without bumping the toolchain.
+  `cargo test export_bindings` regenerates `src/bindings.ts` headlessly.
+  Two rc.22 bugs worked around in our types: `#[serde(flatten)]` inside enum struct-variants is
+  dropped (use a newtype variant wrapping a struct — see `CollectionNode::Request(RequestNode)`),
+  and `rename_all = "camelCase"` diverges from serde on acronym-leading variants (explicit
+  `#[serde(rename = "gYearMonth")]`).
 - **DO NOT export `bindings.ts` into a folder watched by hot-reload** — causes an infinite reload loop.
+  `vite.config.ts` ignores `src/bindings.ts` in `server.watch` for this reason.
 - **rustls throughout the stack** (ADR-006) — no feature that pulls OpenSSL/native-tls, not even transitively.
 - **Tailwind v4** has a different shadcn setup than v3 — follow the v4 guide (config in CSS, not in `tailwind.config.js`).
 - **Titlebar (decorum)**: `create_overlay_titlebar()` + (macOS) `set_traffic_lights_inset(...)`; `tauri.conf.json` with `titleBarStyle:"Overlay"`, `hiddenTitle:true`. `data-tauri-drag-region` does not inherit to children — mark interactive elements as non-draggable.

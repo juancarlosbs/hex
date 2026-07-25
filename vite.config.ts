@@ -31,7 +31,9 @@ export default defineConfig(async () => ({
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 4. bindings.ts is rewritten by tauri-specta on every Rust rebuild —
+      //    watching it causes an infinite reload loop (docs/stack.md §3)
+      ignored: ["**/src-tauri/**", "**/src/bindings.ts"],
     },
   },
 }));

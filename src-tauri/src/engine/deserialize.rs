@@ -90,7 +90,10 @@ fn parse_node(
     } else if node.occurs.min == 0 {
         Ok(FormValue::Omitted)
     } else {
-        Err(structure(format!("missing required element <{}>", node.name)))
+        Err(structure(format!(
+            "missing required element <{}>",
+            node.name
+        )))
     }
 }
 
@@ -145,7 +148,9 @@ fn parse_one(node: &SchemaNode, elem: &Node) -> Result<FormValue, DeserializeErr
                 .iter()
                 .enumerate()
                 .find(|(_, b)| matches(b, first))
-                .ok_or_else(|| structure(format!("no matching choice branch in <{}>", node.name)))?;
+                .ok_or_else(|| {
+                    structure(format!("no matching choice branch in <{}>", node.name))
+                })?;
             let mut cur = 0;
             let value = parse_node(bnode, &child_elems, &mut cur)?;
             if cur != child_elems.len() {

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Loader2, CircleAlert } from "lucide-react";
-import { ResponseBodyView as BodyViewKind, ResponseTab } from "../../lib/response-types";
+import { HttpResponse, ResponseBodyView as BodyViewKind, ResponseTab } from "../../lib/response-types";
 import { ResponsePlaceholder } from "./ResponsePlaceholder";
 import { ResponseStatusBar } from "./ResponseStatusBar";
 import { SoapFaultBanner } from "./SoapFaultBanner";
@@ -73,7 +73,7 @@ function ErrorView({ message }: { message: string }) {
   );
 }
 
-function HeadersView({ headers }: { headers: Record<string, string> }) {
+function HeadersView({ headers }: { headers: HttpResponse["headers"] }) {
   const entries = Object.entries(headers);
   return (
     <div className="flex-1 min-h-0 overflow-auto p-3">

@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum CollectionNode {
     Folder {
@@ -11,15 +11,20 @@ pub enum CollectionNode {
         name: String,
         children: Vec<CollectionNode>,
     },
-    Request {
-        id: String,
-        name: String,
-        #[serde(flatten)]
-        kind: RequestKind,
-    },
+    // Newtype variant (not inline fields): specta rc.22 drops `#[serde(flatten)]`
+    // inside enum struct-variants, but exports struct flatten as an intersection.
+    Request(RequestNode),
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
+pub struct RequestNode {
+    pub id: String,
+    pub name: String,
+    #[serde(flatten)]
+    pub kind: RequestKind,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum RequestKind {
     Rest {
@@ -54,7 +59,7 @@ struct FolderMeta {
     children_order: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct KeyValueEntry {
     pub id: String,
     pub key: String,
@@ -66,7 +71,7 @@ pub struct KeyValueEntry {
     pub entry_type: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct BodyData {
     pub mode: String,
     pub json: String,
@@ -74,7 +79,7 @@ pub struct BodyData {
     pub form: Vec<KeyValueEntry>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum AuthData {
     None,
@@ -93,7 +98,7 @@ pub enum AuthData {
     },
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct RequestFile {
     pub id: String,
     pub name: String,
@@ -109,7 +114,7 @@ pub struct RequestFile {
     pub auth: Option<AuthData>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, specta::Type)]
 pub struct RequestContent {
     #[serde(flatten)]
     pub kind: RequestKind,
@@ -193,11 +198,11 @@ fn read_folder_children(dir: &Path, order: &[String]) -> anyhow::Result<Vec<Coll
             });
         } else if req_file.exists() {
             let rf: RequestFile = toml::from_str(&std::fs::read_to_string(&req_file)?)?;
-            nodes.push(CollectionNode::Request {
+            nodes.push(CollectionNode::Request(RequestNode {
                 id: rf.id,
                 name: rf.name,
                 kind: rf.kind,
-            });
+            }));
         }
     }
     Ok(nodes)
@@ -306,11 +311,11 @@ pub fn create_request(
     let mut parent_meta = read_folder_meta(&parent_dir)?;
     parent_meta.children_order.push(id.clone());
     write_folder_meta(&parent_dir, &parent_meta)?;
-    Ok(CollectionNode::Request {
+    Ok(CollectionNode::Request(RequestNode {
         id,
         name: name.to_string(),
         kind,
-    })
+    }))
 }
 
 fn request_file_path(root: &Path, path: &[String]) -> anyhow::Result<PathBuf> {
@@ -434,6 +439,24 @@ mod tests {
     }
 
     #[test]
+    fn request_node_json_flattens_kind_into_the_node() {
+        // The frontend (and bindings.ts) depend on this wire shape: `kind`'s
+        // fields inlined next to `type`/`id`/`name`, never nested under "kind".
+        let node = CollectionNode::Request(RequestNode {
+            id: "1".into(),
+            name: "r".into(),
+            kind: RequestKind::Rest {
+                method: "GET".into(),
+                url: "u".into(),
+            },
+        });
+        let json = serde_json::to_value(&node).unwrap();
+        assert_eq!(json["type"], "request");
+        assert_eq!(json["kind"], "rest");
+        assert_eq!(json["method"], "GET");
+    }
+
+    #[test]
     fn list_empty_workspace_returns_empty() {
         let dir = tmp("list-empty");
         let result = list_collections(&dir, "ws1").unwrap();
@@ -507,11 +530,11 @@ mod tests {
             panic!()
         };
         assert_eq!(children.len(), 1);
-        let CollectionNode::Request {
+        let CollectionNode::Request(RequestNode {
             name,
             kind: RequestKind::Rest { method, .. },
             ..
-        } = &children[0]
+        }) = &children[0]
         else {
             panic!()
         };
@@ -554,7 +577,7 @@ mod tests {
             },
         )
         .unwrap();
-        let CollectionNode::Request { id: req_id, .. } = req else {
+        let CollectionNode::Request(RequestNode { id: req_id, .. }) = req else {
             panic!()
         };
         rename_node(&dir, "ws1", vec![col_id, req_id], "New").unwrap();
@@ -562,7 +585,7 @@ mod tests {
         let CollectionNode::Folder { children, .. } = &cols[0] else {
             panic!()
         };
-        let CollectionNode::Request { name, .. } = &children[0] else {
+        let CollectionNode::Request(RequestNode { name, .. }) = &children[0] else {
             panic!()
         };
         assert_eq!(name, "New");
@@ -631,7 +654,7 @@ mod tests {
             },
         )
         .unwrap();
-        let CollectionNode::Request { id: req_id, .. } = req else {
+        let CollectionNode::Request(RequestNode { id: req_id, .. }) = req else {
             panic!()
         };
         let path = vec![col_id, req_id];
@@ -696,7 +719,7 @@ mod tests {
             },
         )
         .unwrap();
-        let CollectionNode::Request { id: req_id, .. } = req else {
+        let CollectionNode::Request(RequestNode { id: req_id, .. }) = req else {
             panic!()
         };
 
@@ -728,7 +751,7 @@ mod tests {
             }),
         };
         let node = create_request(&dir, "w1", vec![col_id.clone()], "Add", kind).unwrap();
-        let CollectionNode::Request { id, .. } = &node else {
+        let CollectionNode::Request(RequestNode { id, .. }) = &node else {
             panic!("expected request")
         };
         let rf = get_request(&dir, "w1", vec![col_id, id.clone()]).unwrap();

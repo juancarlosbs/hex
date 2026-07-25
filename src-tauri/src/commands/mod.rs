@@ -6,6 +6,7 @@ fn data_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn list_collections(
     app: tauri::AppHandle,
     workspace_id: String,
@@ -15,6 +16,7 @@ pub fn list_collections(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn create_collection(
     app: tauri::AppHandle,
     workspace_id: String,
@@ -25,6 +27,7 @@ pub fn create_collection(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn create_folder(
     app: tauri::AppHandle,
     workspace_id: String,
@@ -36,6 +39,7 @@ pub fn create_folder(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn create_request(
     app: tauri::AppHandle,
     workspace_id: String,
@@ -49,6 +53,7 @@ pub fn create_request(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn rename_node(
     app: tauri::AppHandle,
     workspace_id: String,
@@ -60,6 +65,7 @@ pub fn rename_node(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn delete_node(
     app: tauri::AppHandle,
     workspace_id: String,
@@ -70,6 +76,7 @@ pub fn delete_node(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn reorder_children(
     app: tauri::AppHandle,
     workspace_id: String,
@@ -82,6 +89,7 @@ pub fn reorder_children(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn get_request(
     app: tauri::AppHandle,
     workspace_id: String,
@@ -92,6 +100,7 @@ pub fn get_request(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn update_request(
     app: tauri::AppHandle,
     workspace_id: String,
@@ -103,6 +112,7 @@ pub fn update_request(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn send_request(
     spec: crate::engine::SendSpec,
 ) -> Result<crate::engine::HttpResponse, String> {
@@ -112,7 +122,7 @@ pub async fn send_request(
 use crate::domain::wsdl::{OperationRef, SoapVersion};
 use crate::wsdl;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct WsdlImportPreview {
     pub service_name: String,
@@ -136,6 +146,7 @@ async fn fetch_text(client: &reqwest::Client, url: &str) -> Result<String, Strin
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn import_wsdl(url: String) -> Result<WsdlImportPreview, String> {
     let client = http_client()?;
     let fetch = |u: String| {
@@ -165,6 +176,7 @@ pub async fn import_wsdl(url: String) -> Result<WsdlImportPreview, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn confirm_wsdl_import(
     app: tauri::AppHandle,
     workspace_id: String,
@@ -204,6 +216,7 @@ use crate::domain::schema::SchemaNode;
 use crate::domain::wsdl::QName;
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_operation_schema(
     wsdl_url: String,
     input_element: QName,
@@ -231,6 +244,7 @@ use crate::domain::value::FormValue;
 use crate::engine;
 
 #[tauri::command]
+#[specta::specta]
 pub async fn send_soap(
     wsdl_url: String,
     input_element: QName,
@@ -266,6 +280,7 @@ pub async fn send_soap(
 /// Serialize the SOAP envelope from the current form value without sending it —
 /// backs the request panel's XML preview. Pure: reuses the loaded schema, no I/O.
 #[tauri::command]
+#[specta::specta]
 pub fn build_soap_envelope(
     schema: SchemaNode,
     soap_action: String,
@@ -281,6 +296,7 @@ pub fn build_soap_envelope(
 /// Parse a hand-edited envelope back into form values, guided by the schema.
 /// Errors (non-conforming XML) tell the caller to keep the raw draft instead.
 #[tauri::command]
+#[specta::specta]
 pub fn parse_envelope(envelope: String, schema: SchemaNode) -> Result<FormValue, String> {
     engine::deserialize::parse_envelope(&schema, &envelope).map_err(|e| e.to_string())
 }
@@ -288,6 +304,7 @@ pub fn parse_envelope(envelope: String, schema: SchemaNode) -> Result<FormValue,
 /// Send a raw SOAP envelope edited by hand in the XML view, bypassing the form
 /// serializer. Transport metadata still follows the selected SOAP version.
 #[tauri::command]
+#[specta::specta]
 pub async fn send_soap_raw(
     endpoint: String,
     envelope: String,

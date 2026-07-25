@@ -17,6 +17,7 @@ const RESP: HttpResponse = {
   headers: {},
   body: "{}",
   timing: { dnsMs: null, tcpMs: null, tlsMs: null, ttfbMs: 5, downloadMs: 0, totalMs: 5 },
+  fault: null,
 };
 
 const request = () => makeEmptyRequest("r1", "R1", "GET", ["c1", "r1"]);

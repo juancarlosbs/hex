@@ -53,6 +53,22 @@ async deleteNode(workspaceId: string, path: string[]) : Promise<Result<null, str
     else return { status: "error", error: e  as any };
 }
 },
+async moveNode(workspaceId: string, path: string[], newParentPath: string[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("move_node", { workspaceId, path, newParentPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async duplicateRequest(workspaceId: string, path: string[]) : Promise<Result<CollectionNode, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("duplicate_request", { workspaceId, path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async reorderChildren(workspaceId: string, parentPath: string[], orderedIds: string[]) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("reorder_children", { workspaceId, parentPath, orderedIds }) };

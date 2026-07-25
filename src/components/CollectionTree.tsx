@@ -19,6 +19,8 @@ import { cn } from "../lib/utils";
 import { CollectionNode } from "../lib/api";
 import { useCollectionStore } from "../store/collectionStore";
 import { useRequestStore } from "../store/requestStore";
+import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
+import { MoveRequestModal } from "./MoveRequestModal";
 
 const METHOD_COLORS: Record<string, string> = {
   GET: "text-method-get",
@@ -32,6 +34,8 @@ const METHOD_COLORS: Record<string, string> = {
 
 type MenuAction =
   | { type: "rename"; path: string[]; currentName: string }
+  | { type: "duplicate"; path: string[] }
+  | { type: "move"; path: string[] }
   | { type: "delete"; path: string[] }
   | { type: "newFolder"; parentPath: string[] }
   | { type: "newRequest"; parentPath: string[] };
@@ -61,6 +65,8 @@ function ContextMenu({
 
   const label = (a: MenuAction) => {
     if (a.type === "rename") return "Rename";
+    if (a.type === "duplicate") return "Duplicate";
+    if (a.type === "move") return "Move to…";
     if (a.type === "delete") return "Delete";
     if (a.type === "newFolder") return "New Folder";
     return "New Request";
@@ -276,6 +282,7 @@ function SortableFolderItem({
 }) {
   const [open, setOpen] = useState(true);
   const [renaming, setRenaming] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const rename = useCollectionStore((s) => s.rename);
   const remove = useCollectionStore((s) => s.remove);
@@ -291,10 +298,7 @@ function SortableFolderItem({
 
   function handleAction(a: MenuAction) {
     if (a.type === "rename") setRenaming(true);
-    if (a.type === "delete") {
-      remove(workspaceId, path);
-      closeRequestsUnder(path);
-    }
+    if (a.type === "delete") setConfirmingDelete(true);
     if (a.type === "newFolder") { setOpen(true); onPendingCreate(path, "folder"); }
     if (a.type === "newRequest") { setOpen(true); onPendingCreate(path, "request"); }
   }
@@ -351,6 +355,16 @@ function SortableFolderItem({
           onClose={() => setMenu(null)}
         />
       )}
+      <ConfirmDeleteModal
+        open={confirmingDelete}
+        name={node.name}
+        isFolder
+        onConfirm={() => {
+          remove(workspaceId, path);
+          closeRequestsUnder(path);
+        }}
+        onClose={() => setConfirmingDelete(false)}
+      />
     </div>
   );
 }
@@ -367,13 +381,18 @@ function SortableRequestItem({
   workspaceId: string;
 }) {
   const [renaming, setRenaming] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [movingTo, setMovingTo] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const rename = useCollectionStore((s) => s.rename);
   const remove = useCollectionStore((s) => s.remove);
+  const move = useCollectionStore((s) => s.move);
+  const duplicate = useCollectionStore((s) => s.duplicate);
   const activeRequestId = useCollectionStore((s) => s.activeRequestId);
   const setActive = useCollectionStore((s) => s.setActiveRequest);
   const openInStore = useRequestStore((s) => s.openRequest);
   const closeInStore = useRequestStore((s) => s.closeRequest);
+  const updatePath = useRequestStore((s) => s.updatePath);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: node.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
@@ -391,14 +410,21 @@ function SortableRequestItem({
 
   function handleAction(a: MenuAction) {
     if (a.type === "rename") setRenaming(true);
-    if (a.type === "delete") {
-      remove(workspaceId, path);
-      closeInStore(node.id);
-    }
+    if (a.type === "duplicate") duplicate(workspaceId, path);
+    if (a.type === "move") setMovingTo(true);
+    if (a.type === "delete") setConfirmingDelete(true);
+  }
+
+  async function handleMove(destination: string[]) {
+    const moved = await move(workspaceId, path, destination);
+    // keep an open tab saving against the request's new location
+    if (moved) updatePath(node.id, [...destination, node.id]);
   }
 
   const menuActions: MenuAction[] = [
     { type: "rename", path, currentName: node.name },
+    { type: "duplicate", path },
+    { type: "move", path },
     { type: "delete", path },
   ];
 
@@ -451,6 +477,23 @@ function SortableRequestItem({
           onClose={() => setMenu(null)}
         />
       )}
+      <ConfirmDeleteModal
+        open={confirmingDelete}
+        name={node.name}
+        isFolder={false}
+        onConfirm={() => {
+          remove(workspaceId, path);
+          closeInStore(node.id);
+        }}
+        onClose={() => setConfirmingDelete(false)}
+      />
+      <MoveRequestModal
+        open={movingTo}
+        requestName={node.name}
+        currentParentPath={path.slice(0, -1)}
+        onMove={handleMove}
+        onClose={() => setMovingTo(false)}
+      />
     </div>
   );
 }

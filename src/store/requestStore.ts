@@ -24,6 +24,8 @@ interface RequestState {
   openRequest(id: string, name: string, path: string[]): Promise<void>;
   saveRequest(id: string): Promise<void>;
   closeRequest(id: string): void;
+  /** Re-point an open tab after its request moved on disk — saves must hit the new file. */
+  updatePath(id: string, path: string[]): void;
   closeRequestsUnder(prefix: string[]): void;
   closeAll(): void;
   setActive(id: string | null): void;
@@ -139,6 +141,10 @@ export const useRequestStore = create<RequestState>((set, get) => ({
       return { openRequests: rest, order, activeId };
     });
     useResponseStore.getState().clear(id);
+  },
+
+  updatePath(id, path) {
+    set((s) => ({ openRequests: patch(s.openRequests, id, { path }) }));
   },
 
   closeRequestsUnder(prefix) {

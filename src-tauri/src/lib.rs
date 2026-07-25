@@ -12,6 +12,8 @@ fn specta_builder() -> tauri_specta::Builder {
         commands::create_request,
         commands::rename_node,
         commands::delete_node,
+        commands::move_node,
+        commands::duplicate_request,
         commands::reorder_children,
         commands::get_request,
         commands::update_request,

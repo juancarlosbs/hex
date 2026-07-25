@@ -10,6 +10,8 @@ interface CollectionState {
   addRequest: (workspaceId: string, parentPath: string[], name: string, kind: RequestKind) => Promise<CollectionNode | null>;
   rename: (workspaceId: string, path: string[], name: string) => Promise<void>;
   remove: (workspaceId: string, path: string[]) => Promise<void>;
+  move: (workspaceId: string, path: string[], newParentPath: string[]) => Promise<boolean>;
+  duplicate: (workspaceId: string, path: string[]) => Promise<void>;
   reorder: (workspaceId: string, parentPath: string[], orderedIds: string[]) => Promise<void>;
   updateRequestMeta: (path: string[], method: string, url: string) => void;
   setActiveRequest: (id: string | null) => void;
@@ -72,6 +74,27 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     } catch (e) {
       console.error("delete failed:", e);
       set({ collections: prev });
+    }
+  },
+
+  async move(workspaceId, path, newParentPath) {
+    try {
+      await api.moveNode(workspaceId, path, newParentPath);
+      // the fs layout changed shape — re-read the tree from the source of truth
+      await get().load(workspaceId);
+      return true;
+    } catch (e) {
+      console.error("move failed:", e);
+      return false;
+    }
+  },
+
+  async duplicate(workspaceId, path) {
+    try {
+      await api.duplicateRequest(workspaceId, path);
+      await get().load(workspaceId);
+    } catch (e) {
+      console.error("duplicate failed:", e);
     }
   },
 

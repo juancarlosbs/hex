@@ -58,6 +58,12 @@ export const api = {
   deleteNode: (workspaceId: string, path: string[]) =>
     unwrap(commands.deleteNode(workspaceId, path)),
 
+  moveNode: (workspaceId: string, path: string[], newParentPath: string[]) =>
+    unwrap(commands.moveNode(workspaceId, path, newParentPath)),
+
+  duplicateRequest: (workspaceId: string, path: string[]) =>
+    unwrap(commands.duplicateRequest(workspaceId, path)),
+
   reorderChildren: (workspaceId: string, parentPath: string[], orderedIds: string[]) =>
     unwrap(commands.reorderChildren(workspaceId, parentPath, orderedIds)),
 

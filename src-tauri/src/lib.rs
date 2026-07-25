@@ -16,6 +16,8 @@ fn specta_builder() -> tauri_specta::Builder {
         commands::get_request,
         commands::update_request,
         commands::send_request,
+        commands::append_send_history,
+        commands::list_send_history,
         commands::import_wsdl,
         commands::confirm_wsdl_import,
         commands::get_operation_schema,

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { HttpResponse } from "../lib/response-types";
 import { OpenRequest, methodAllowsBody } from "../lib/request-types";
 import { api } from "../lib/api";
+import { useWorkspaceStore } from "./workspaceStore";
 
 export type ResponseEntry =
   | { state: "loading" }
@@ -25,6 +26,8 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
 
   async send(request) {
     const id = request.id;
+    const workspaceId = useWorkspaceStore.getState().activeId;
+    const startedAt = Date.now();
     const mySeq = (get().seq[id] ?? 0) + 1;
     set((s) => ({
       seq: { ...s.seq, [id]: mySeq },
@@ -55,6 +58,20 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
       entry = { state: "done", response };
     } catch (e) {
       entry = { state: "error", error: String(e) };
+    }
+
+    // Record the send before publishing the result so the History tab sees it
+    // on refresh. A failed append must never break the send itself.
+    try {
+      await api.appendSendHistory(workspaceId, id, {
+        timestampMs: startedAt,
+        status: entry.state === "done" ? entry.response.status : null,
+        timeMs: entry.state === "done" ? entry.response.timeMs : Date.now() - startedAt,
+        sizeBytes: entry.state === "done" ? entry.response.sizeBytes : 0,
+        error: entry.state === "error" ? entry.error : null,
+      });
+    } catch {
+      // history is best-effort
     }
 
     if (get().seq[id] !== mySeq) return; // cancelled or superseded

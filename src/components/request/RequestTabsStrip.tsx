@@ -7,6 +7,7 @@ const TABS: { key: RequestTab; label: string }[] = [
   { key: "body", label: "Body" },
   { key: "headers", label: "Headers" },
   { key: "auth", label: "Auth" },
+  { key: "history", label: "History" },
 ];
 
 interface RequestTabsStripProps {

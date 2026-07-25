@@ -45,7 +45,7 @@ export type AuthConfig =
   | { type: "bearer"; token: string }
   | { type: "apikey"; key: string; value: string; addTo: "header" | "query" };
 
-export type RequestTab = "params" | "body" | "headers" | "auth";
+export type RequestTab = "params" | "body" | "headers" | "auth" | "history";
 
 export interface OpenRequest {
   id: string;

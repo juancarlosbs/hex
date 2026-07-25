@@ -4,7 +4,7 @@ import { methodAllowsBody } from "../../lib/request-types";
 import { UrlBar } from "./UrlBar";
 import { SoapUrlBar } from "./soap/SoapUrlBar";
 import { SoapAutoMeta } from "./soap/SoapAutoMeta";
-import { SoapRequestTabs, type SoapBodyView } from "./soap/SoapRequestTabs";
+import { SoapRequestTabs, soapActiveTab, type SoapBodyView } from "./soap/SoapRequestTabs";
 import { SoapXmlBody } from "./soap/SoapXmlBody";
 import { RequestTabsStrip } from "./RequestTabsStrip";
 import { ParamsTab } from "./ParamsTab";
@@ -13,6 +13,7 @@ import { BodyTab } from "./body/BodyTab";
 import { AuthTab } from "./auth/AuthTab";
 import { RequestEmpty } from "./RequestEmpty";
 import { SchemaForm } from "./soap/SchemaForm";
+import { HistoryTab } from "./HistoryTab";
 
 export function RequestPanel() {
   const activeId = useRequestStore((s) => s.activeId);
@@ -55,7 +56,9 @@ export function RequestPanel() {
         <SoapAutoMeta requestId={req.id} />
         <SoapRequestTabs requestId={req.id} view={soapView} onViewChange={onSoapViewChange} />
         <div className="flex-1 min-h-0">
-          {soap.schema === null ? (
+          {soapActiveTab(req.activeTab) === "history" ? (
+            <HistoryTab requestId={req.id} />
+          ) : soap.schema === null ? (
             <div className="p-3 text-[12px] text-muted">Loading schema…</div>
           ) : soapView === "form" ? (
             <div className="h-full flex flex-col">
@@ -112,6 +115,7 @@ export function RequestPanel() {
         )}
         {activeTab === "headers" && <HeadersTab requestId={activeId} />}
         {activeTab === "auth" && <AuthTab requestId={activeId} />}
+        {activeTab === "history" && <HistoryTab requestId={activeId} />}
       </div>
     </div>
   );

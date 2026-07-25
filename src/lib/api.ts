@@ -3,6 +3,7 @@
 import { commands, type Result } from "../bindings";
 import type {
   FormValue,
+  HistoryEntry,
   QName,
   RequestContent,
   RequestKind,
@@ -16,6 +17,7 @@ export type {
   Attribute,
   CollectionNode,
   FormValue,
+  HistoryEntry,
   HttpResponse,
   MaxOccurs,
   NodeKind,
@@ -68,6 +70,12 @@ export const api = {
     unwrap(commands.updateRequest(workspaceId, path, content)),
 
   sendRequest: (spec: SendSpec) => unwrap(commands.sendRequest(spec)),
+
+  appendSendHistory: (workspaceId: string, requestId: string, entry: HistoryEntry) =>
+    unwrap(commands.appendSendHistory(workspaceId, requestId, entry)),
+
+  listSendHistory: (workspaceId: string, requestId: string) =>
+    unwrap(commands.listSendHistory(workspaceId, requestId)),
 
   importWsdl: (url: string) => unwrap(commands.importWsdl(url)),
 

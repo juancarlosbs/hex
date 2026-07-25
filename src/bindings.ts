@@ -85,6 +85,22 @@ async sendRequest(spec: SendSpec) : Promise<Result<HttpResponse, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async appendSendHistory(workspaceId: string, requestId: string, entry: HistoryEntry) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("append_send_history", { workspaceId, requestId, entry }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listSendHistory(workspaceId: string, requestId: string) : Promise<Result<HistoryEntry[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_send_history", { workspaceId, requestId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async importWsdl(url: string) : Promise<Result<WsdlImportPreview, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("import_wsdl", { url }) };
@@ -174,6 +190,11 @@ export type CollectionNode = { type: "folder"; id: string; name: string; childre
  * pair (SchemaNode, FormValue). See docs/domain-model.md §3.
  */
 export type FormValue = { leaf: string | null } | { sequence: FormValue[] } | { choice: { branch: number; value: FormValue } } | { repeated: FormValue[] } | "nil" | "omitted" | { raw: string }
+/**
+ * One recorded Send for a request. `status` is None when the send failed
+ * before an HTTP response existed (DNS/connect error) — `error` carries why.
+ */
+export type HistoryEntry = { timestampMs: number; status: number | null; timeMs: number; sizeBytes: number; error?: string | null }
 export type HttpResponse = { status: number; statusText: string; timeMs: number; sizeBytes: number; headers: Partial<{ [key in string]: string }>; body: string; timing: TimingBreakdown; fault: SoapFault | null }
 export type KeyValueEntry = { id: string; key: string; value: string; description?: string | null; enabled: boolean; type?: string | null }
 export type MaxOccurs = { bounded: number } | "unbounded"

@@ -111,6 +111,31 @@ pub fn update_request(
     collection::update_request(&dir, &workspace_id, path, content).map_err(|e| e.to_string())
 }
 
+use crate::persistence::history::{self, HistoryEntry};
+
+#[tauri::command]
+#[specta::specta]
+pub fn append_send_history(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    request_id: String,
+    entry: HistoryEntry,
+) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    history::append_entry(&dir, &workspace_id, &request_id, &entry).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn list_send_history(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    request_id: String,
+) -> Result<Vec<HistoryEntry>, String> {
+    let dir = data_dir(&app)?;
+    history::list_entries(&dir, &workspace_id, &request_id).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn send_request(

@@ -1,7 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../lib/api", () => ({
-  api: { sendRequest: vi.fn(), sendSoap: vi.fn(), sendSoapRaw: vi.fn() },
+  api: {
+    sendRequest: vi.fn(),
+    sendSoap: vi.fn(),
+    sendSoapRaw: vi.fn(),
+    appendSendHistory: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+vi.mock("./workspaceStore", () => ({
+  useWorkspaceStore: { getState: () => ({ activeId: "ws1" }), subscribe: vi.fn() },
 }));
 
 import { useResponseStore } from "./responseStore";
@@ -76,6 +84,33 @@ describe("send", () => {
     await first;
     const entry = useResponseStore.getState().responses.r1;
     expect(entry).toEqual({ state: "done", response: { ...RESP, status: 201 } });
+  });
+
+  it("records a history entry after a successful send", async () => {
+    vi.mocked(api.sendRequest).mockResolvedValue(RESP);
+    await useResponseStore.getState().send(request());
+    expect(api.appendSendHistory).toHaveBeenCalledWith(
+      "ws1",
+      "r1",
+      expect.objectContaining({ status: 200, timeMs: 5, sizeBytes: 2, error: null }),
+    );
+  });
+
+  it("records a history entry with the error when the send fails", async () => {
+    vi.mocked(api.sendRequest).mockRejectedValue("connection refused");
+    await useResponseStore.getState().send(request());
+    expect(api.appendSendHistory).toHaveBeenCalledWith(
+      "ws1",
+      "r1",
+      expect.objectContaining({ status: null, sizeBytes: 0, error: "connection refused" }),
+    );
+  });
+
+  it("a failed history append does not break the send", async () => {
+    vi.mocked(api.sendRequest).mockResolvedValue(RESP);
+    vi.mocked(api.appendSendHistory).mockRejectedValueOnce("disk full");
+    await useResponseStore.getState().send(request());
+    expect(useResponseStore.getState().responses.r1).toEqual({ state: "done", response: RESP });
   });
 
   it("strips the body for GET/HEAD methods", async () => {

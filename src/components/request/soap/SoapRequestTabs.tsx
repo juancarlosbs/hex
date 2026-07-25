@@ -14,11 +14,12 @@ const TABS: { key: RequestTab; label: string; disabled?: boolean }[] = [
   { key: "headers", label: "Headers", disabled: true },
   { key: "body", label: "Body" },
   { key: "auth", label: "Auth", disabled: true },
+  { key: "history", label: "History" },
 ];
 
 /** SOAP has no Params tab — anything else falls back to Body. */
 export function soapActiveTab(tab: RequestTab): RequestTab {
-  return tab === "headers" || tab === "auth" ? tab : "body";
+  return tab === "headers" || tab === "auth" || tab === "history" ? tab : "body";
 }
 
 export function SoapRequestTabs({ requestId, view, onViewChange }: SoapRequestTabsProps) {

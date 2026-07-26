@@ -2,7 +2,7 @@ use crate::engine::error::EngineError;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper_util::rt::TokioIo;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -13,7 +13,7 @@ use tokio_rustls::TlsConnector;
 
 /// Per-phase timing of a single request (differentiator #3 — the waterfall).
 /// MVP: one new connection per request, so every phase is always measured.
-#[derive(Debug, Serialize, specta::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TimingBreakdown {
     pub dns_ms: Option<u64>,

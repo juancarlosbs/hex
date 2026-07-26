@@ -11,7 +11,7 @@ pub mod serialize;
 use connector::TimingBreakdown;
 use fault::SoapFault;
 
-#[derive(Debug, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct SendSpec {
     pub method: String,
     pub url: String,
@@ -23,7 +23,7 @@ pub struct SendSpec {
     pub auth: AuthData,
 }
 
-#[derive(Debug, Serialize, specta::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct HttpResponse {
     pub status: u16,
@@ -34,6 +34,10 @@ pub struct HttpResponse {
     pub body: String,
     pub timing: TimingBreakdown,
     pub fault: Option<SoapFault>,
+    /// True when a history entry's body was cut at 1 MB before storing.
+    /// Always false on live responses.
+    #[serde(default)]
+    pub truncated: bool,
 }
 
 /// True when a Content-Type header indicates XML/SOAP (fault detection only applies there).
@@ -161,6 +165,7 @@ fn to_http_response(raw: connector::RawResponse) -> HttpResponse {
         body: raw.body,
         timing: raw.timing,
         fault,
+        truncated: false,
     }
 }
 

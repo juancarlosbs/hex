@@ -6,9 +6,7 @@ use crate::domain::value::FormValue;
 use crate::domain::wsdl::QName;
 use crate::engine::{HttpResponse, SendSpec};
 
-#[allow(dead_code)]
 const MAX_ENTRIES_PER_REQUEST: usize = 50;
-#[allow(dead_code)]
 const MAX_BODY_BYTES: usize = 1_048_576; // 1 MB
 
 /// What was sent — enough to restore the request in the editor.
@@ -64,7 +62,6 @@ pub struct HistoryEntry {
     pub error: Option<String>,
 }
 
-#[allow(dead_code)]
 fn open(db: &Path) -> anyhow::Result<Connection> {
     if let Some(parent) = db.parent() {
         std::fs::create_dir_all(parent)?;
@@ -89,7 +86,6 @@ fn open(db: &Path) -> anyhow::Result<Connection> {
     Ok(conn)
 }
 
-#[allow(dead_code)]
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -98,7 +94,6 @@ fn now_ms() -> i64 {
 }
 
 /// Cut `body` at MAX_BODY_BYTES on a char boundary. Returns true when cut.
-#[allow(dead_code)]
 fn truncate_body(body: &mut String) -> bool {
     if body.len() <= MAX_BODY_BYTES {
         return false;
@@ -111,7 +106,6 @@ fn truncate_body(body: &mut String) -> bool {
     true
 }
 
-#[allow(dead_code)]
 pub fn append(
     db: &Path,
     request_id: &str,

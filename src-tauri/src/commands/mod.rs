@@ -5,6 +5,22 @@ fn data_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     app.path().app_data_dir().map_err(|e| e.to_string())
 }
 
+/// Best-effort history append — a history failure must never fail the send.
+fn record_history(
+    app: &tauri::AppHandle,
+    request_id: Option<String>,
+    spec: crate::persistence::history::HistorySpec,
+    result: &Result<crate::engine::HttpResponse, String>,
+) {
+    let Some(request_id) = request_id else { return };
+    let Ok(dir) = data_dir(app) else { return };
+    if let Err(e) =
+        crate::persistence::history::append(&dir.join("history.db"), &request_id, spec, result)
+    {
+        eprintln!("history: append failed for {request_id}: {e:#}");
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn list_collections(
@@ -114,9 +130,14 @@ pub fn update_request(
 #[tauri::command]
 #[specta::specta]
 pub async fn send_request(
+    app: tauri::AppHandle,
     spec: crate::engine::SendSpec,
+    request_id: Option<String>,
 ) -> Result<crate::engine::HttpResponse, String> {
-    crate::engine::send(spec).await
+    let snapshot = crate::persistence::history::HistorySpec::Rest { spec: spec.clone() };
+    let result = crate::engine::send(spec).await;
+    record_history(&app, request_id, snapshot, &result);
+    result
 }
 
 use crate::domain::wsdl::{OperationRef, SoapVersion};
@@ -245,14 +266,25 @@ use crate::engine;
 
 #[tauri::command]
 #[specta::specta]
+#[allow(clippy::too_many_arguments)]
 pub async fn send_soap(
+    app: tauri::AppHandle,
     wsdl_url: String,
     input_element: QName,
     endpoint: String,
     soap_action: String,
     soap_version: String,
     value: FormValue,
+    request_id: Option<String>,
 ) -> Result<engine::HttpResponse, String> {
+    let snapshot = crate::persistence::history::HistorySpec::Soap {
+        wsdl_url: wsdl_url.clone(),
+        input_element: input_element.clone(),
+        endpoint: endpoint.clone(),
+        soap_action: soap_action.clone(),
+        soap_version: soap_version.clone(),
+        value: value.clone(),
+    };
     let client = http_client()?;
     let fetch = |u: String| {
         let client = client.clone();
@@ -274,7 +306,9 @@ pub async fn send_soap(
         engine::serialize::build_envelope(&schema, &value, &soap_version, &soap_action)
             .map_err(|e| e.to_string())?;
 
-    engine::send_soap_envelope(&endpoint, envelope, meta).await
+    let result = engine::send_soap_envelope(&endpoint, envelope, meta).await;
+    record_history(&app, request_id, snapshot, &result);
+    result
 }
 
 /// Serialize the SOAP envelope from the current form value without sending it —
@@ -306,11 +340,21 @@ pub fn parse_envelope(envelope: String, schema: SchemaNode) -> Result<FormValue,
 #[tauri::command]
 #[specta::specta]
 pub async fn send_soap_raw(
+    app: tauri::AppHandle,
     endpoint: String,
     envelope: String,
     soap_action: String,
     soap_version: String,
+    request_id: Option<String>,
 ) -> Result<engine::HttpResponse, String> {
+    let snapshot = crate::persistence::history::HistorySpec::SoapRaw {
+        endpoint: endpoint.clone(),
+        envelope: envelope.clone(),
+        soap_action: soap_action.clone(),
+        soap_version: soap_version.clone(),
+    };
     let meta = engine::serialize::soap_meta(&soap_version, &soap_action);
-    engine::send_soap_envelope(&endpoint, envelope, meta).await
+    let result = engine::send_soap_envelope(&endpoint, envelope, meta).await;
+    record_history(&app, request_id, snapshot, &result);
+    result
 }

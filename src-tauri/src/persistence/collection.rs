@@ -403,7 +403,6 @@ pub fn delete_node(data_dir: &Path, workspace_id: &str, path: Vec<String>) -> an
     Ok(())
 }
 
-#[allow(dead_code)]
 fn insert_after(order: &mut Vec<String>, after: &str, id: String) {
     let pos = order
         .iter()
@@ -413,7 +412,6 @@ fn insert_after(order: &mut Vec<String>, after: &str, id: String) {
     order.insert(pos, id);
 }
 
-#[allow(dead_code)]
 fn copy_folder_recursive(
     src: &Path,
     dest_parent: &Path,
@@ -460,7 +458,6 @@ fn copy_folder_recursive(
     Ok((id.clone(), CollectionNode::Folder { id, name, children }))
 }
 
-#[allow(dead_code)]
 pub fn duplicate_node(
     data_dir: &Path,
     workspace_id: &str,

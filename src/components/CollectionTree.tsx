@@ -98,8 +98,21 @@ function ConfirmDeleteModal({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    cancelRef.current?.focus();
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onCancel();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onCancel]);
+
   return (
     <div
+      role="dialog"
+      aria-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => {
@@ -115,6 +128,7 @@ function ConfirmDeleteModal({
         <div className="h-px bg-border" />
         <div className="flex items-center justify-end gap-[10px] px-5 py-[14px]">
           <button
+            ref={cancelRef}
             className="px-4 py-[7px] rounded-[4px] text-[13px] font-medium text-foreground bg-secondary border border-border hover:bg-secondary/80 cursor-pointer"
             onClick={onCancel}
           >

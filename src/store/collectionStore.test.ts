@@ -59,6 +59,16 @@ describe("collectionStore.duplicate", () => {
     expect(useCollectionStore.getState().collections.map((n) => n.id)).toEqual(["col", "col2", "z"]);
   });
 
+  it("appends at root when the original is no longer in the tree", async () => {
+    const copy: CollectionNode = { type: "folder", id: "gone2", name: "Gone copy", children: [] };
+    vi.mocked(api.duplicateNode).mockResolvedValue(copy);
+    useCollectionStore.setState({ collections: [folder([])] });
+
+    await useCollectionStore.getState().duplicate("w1", ["gone"]);
+
+    expect(useCollectionStore.getState().collections.map((n) => n.id)).toEqual(["col", "gone2"]);
+  });
+
   it("leaves the tree unchanged when the api call fails", async () => {
     vi.mocked(api.duplicateNode).mockRejectedValue("boom");
     useCollectionStore.setState({ collections: [folder([reqA])] });

@@ -158,6 +158,7 @@ function updateRequestNode(tree: CollectionNode[], path: string[], method: strin
 function insertAfter(tree: CollectionNode[], path: string[], node: CollectionNode): CollectionNode[] {
   if (path.length === 1) {
     const i = tree.findIndex((n) => n.id === path[0]);
+    if (i === -1) return [...tree, node];
     return [...tree.slice(0, i + 1), node, ...tree.slice(i + 1)];
   }
   return tree.map((n) => {

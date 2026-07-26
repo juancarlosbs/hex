@@ -112,4 +112,17 @@ describe("CollectionTree — organize actions", () => {
     expect(remove).not.toHaveBeenCalled();
     expect(screen.queryByText(/cannot be undone/i)).toBeNull();
   });
+
+  it("Escape closes the confirmation without deleting", () => {
+    const remove = vi.fn();
+    useCollectionStore.setState({ collections: [restNode], remove });
+
+    render(<CollectionTree workspaceId="w1" />);
+    fireEvent.contextMenu(screen.getByText("GetThing"));
+    fireEvent.click(screen.getByText("Delete"));
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(remove).not.toHaveBeenCalled();
+    expect(screen.queryByText(/cannot be undone/i)).toBeNull();
+  });
 });

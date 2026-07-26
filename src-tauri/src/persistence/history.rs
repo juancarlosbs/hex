@@ -315,14 +315,14 @@ mod tests {
     #[test]
     fn big_body_is_truncated_and_flagged() {
         let db = tmp("truncate");
-        let big = "é".repeat(700_000); // 1.4 MB of 2-byte chars
+        let big = "€".repeat(400_000); // 1.2 MB of 3-byte chars
         append(&db, "r1", rest_spec("GET"), &Ok(response(&big))).unwrap();
         let id = list(&db, "r1").unwrap()[0].id;
         let entry = get(&db, id).unwrap();
         let resp = entry.response.unwrap();
         assert!(resp.truncated);
         assert!(resp.body.len() <= 1_048_576);
-        assert!(resp.body.chars().all(|c| c == 'é')); // cut on a char boundary
+        assert!(resp.body.chars().all(|c| c == '€')); // cut on a char boundary
     }
 
     #[test]

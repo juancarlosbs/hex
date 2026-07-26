@@ -27,7 +27,7 @@ soapAction, soapVersion, or inputElement.
 ```rust
 DefinitionDiff {
     new: Vec<OperationRef>,
-    changed: Vec<ChangedOperation>, // { name, fresh: OperationRef }
+    changed: Vec<OperationRef>, // fresh version; the operation name is the key
     removed: Vec<String>,
     unchanged: u32,
 }

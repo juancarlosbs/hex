@@ -7,6 +7,7 @@ type Phase =
   | { state: "idle" }
   | { state: "loading" }
   | { state: "preview"; collectionId: string; preview: DefinitionUpdatePreview }
+  | { state: "applying"; collectionId: string; preview: DefinitionUpdatePreview }
   | { state: "done"; summary: string }
   | { state: "error"; message: string };
 
@@ -31,15 +32,19 @@ export const useUpdateDefinitionStore = create<UpdateDefinitionState>((set, get)
     set({ phase: { state: "loading" } });
     try {
       const preview = await api.previewDefinitionUpdate(workspaceId, collectionId);
+      if (get().phase.state !== "loading") return; // cancelled while fetching
       // Settings can skip the preview — but an empty diff still just informs.
       if (useSettingsStore.getState().skipUpdatePreview && !isEmpty(preview.diff)) {
         await api.applyDefinitionUpdate(workspaceId, collectionId, preview);
+        if (get().phase.state !== "loading") return; // cancelled while applying
         await useCollectionStore.getState().load(workspaceId);
+        if (get().phase.state !== "loading") return; // cancelled while reloading
         set({ phase: { state: "done", summary: summary(preview.diff) } });
         return;
       }
       set({ phase: { state: "preview", collectionId, preview } });
     } catch (e) {
+      if (get().phase.state !== "loading") return; // cancelled; drop the stale error
       set({ phase: { state: "error", message: String(e) } });
     }
   },
@@ -47,10 +52,12 @@ export const useUpdateDefinitionStore = create<UpdateDefinitionState>((set, get)
   async apply(workspaceId) {
     const phase = get().phase;
     if (phase.state !== "preview") return;
+    const { collectionId, preview } = phase;
+    set({ phase: { state: "applying", collectionId, preview } });
     try {
-      await api.applyDefinitionUpdate(workspaceId, phase.collectionId, phase.preview);
+      await api.applyDefinitionUpdate(workspaceId, collectionId, preview);
       await useCollectionStore.getState().load(workspaceId);
-      set({ phase: { state: "done", summary: summary(phase.preview.diff) } });
+      set({ phase: { state: "done", summary: summary(preview.diff) } });
     } catch (e) {
       set({ phase: { state: "error", message: String(e) } });
     }

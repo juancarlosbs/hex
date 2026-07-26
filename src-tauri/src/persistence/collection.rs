@@ -565,13 +565,25 @@ pub fn soap_snapshot(
     let col_dir = collections_root(data_dir, workspace_id).join(collection_id);
     let orphans = find_orphans_folder(&col_dir)?;
     let reqs = collect_soap_requests(&col_dir, &[], orphans.as_deref())?;
-    let wsdl_url = reqs
-        .iter()
-        .find_map(|(_, rf)| match &rf.kind {
-            RequestKind::Soap { wsdl_url, .. } => Some(wsdl_url.clone()),
-            _ => None,
-        })
-        .ok_or_else(|| anyhow::anyhow!("collection has no SOAP requests"))?;
+    let wsdl_url = match reqs.iter().find_map(|(_, rf)| match &rf.kind {
+        RequestKind::Soap { wsdl_url, .. } => Some(wsdl_url.clone()),
+        _ => None,
+    }) {
+        Some(url) => url,
+        // Every operation is orphaned: fall back to the Orphans folder so the
+        // collection can still be re-synced instead of dead-ending.
+        None => orphans
+            .as_deref()
+            .map(|oid| collect_soap_requests(&col_dir.join(oid), &[oid.to_string()], None))
+            .transpose()?
+            .into_iter()
+            .flatten()
+            .find_map(|(_, rf)| match &rf.kind {
+                RequestKind::Soap { wsdl_url, .. } => Some(wsdl_url.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| anyhow::anyhow!("collection has no SOAP requests"))?,
+    };
     let ops = reqs
         .iter()
         .filter_map(|(_, rf)| saved_operation_ref(&rf.kind))
@@ -1126,6 +1138,27 @@ mod tests {
         assert_eq!(url, "http://x?wsdl");
         assert_eq!(ops.len(), 1);
         assert_eq!(ops[0].name, "Add");
+    }
+
+    #[test]
+    fn snapshot_falls_back_to_orphans_wsdl_url_when_fully_orphaned() {
+        let dir = tmp("f6-snapshot-fully-orphaned");
+        let col = import_service(
+            &dir,
+            &[
+                fresh_op("Add", "http://x/svc"),
+                fresh_op("Sub", "http://x/svc"),
+            ],
+        );
+        let diff = DefinitionDiff {
+            removed: vec!["Add".into(), "Sub".into()],
+            ..empty_diff()
+        };
+        apply_definition_update(&dir, "w1", &col, "http://x?wsdl", &diff).unwrap();
+
+        let (url, ops) = soap_snapshot(&dir, "w1", &col).unwrap();
+        assert_eq!(url, "http://x?wsdl");
+        assert!(ops.is_empty());
     }
 
     #[test]

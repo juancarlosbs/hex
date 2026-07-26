@@ -14,6 +14,6 @@ function render() {
 }
 
 Promise.all([initWorkspaceStore(), initSettingsStore()]).then(render).catch((e) => {
-  console.error("Failed to init workspace store:", e);
+  console.error("Failed to init stores:", e);
   render(); // render with defaults on failure
 });

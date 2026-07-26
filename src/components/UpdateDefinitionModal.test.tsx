@@ -65,6 +65,15 @@ describe("UpdateDefinitionModal", () => {
     expect(screen.queryByText("Apply Changes")).toBeNull();
   });
 
+  it("shows an applying spinner with no Apply button while applying", () => {
+    useUpdateDefinitionStore.setState({
+      phase: { state: "applying", collectionId: "c1", preview: PREVIEW },
+    });
+    render(<UpdateDefinitionModal />);
+    expect(screen.getByText("Applying…")).toBeTruthy();
+    expect(screen.queryByText("Apply Changes")).toBeNull();
+  });
+
   it("shows the summary in done state and resets on OK", () => {
     useUpdateDefinitionStore.setState({
       phase: { state: "done", summary: "Applied: 1 new, 1 changed, 1 orphaned" },

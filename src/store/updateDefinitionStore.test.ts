@@ -74,6 +74,22 @@ describe("start", () => {
       message: "fetch http://x failed",
     });
   });
+
+  it("discards the result when cancelled while the preview fetch is in flight", async () => {
+    useSettingsStore.setState({ skipUpdatePreview: true });
+    let resolvePreview!: (p: DefinitionUpdatePreview) => void;
+    vi.mocked(api.previewDefinitionUpdate).mockReturnValue(
+      new Promise((resolve) => {
+        resolvePreview = resolve;
+      }),
+    );
+    const startPromise = useUpdateDefinitionStore.getState().start("w1", "c1");
+    useUpdateDefinitionStore.getState().reset();
+    resolvePreview(PREVIEW);
+    await startPromise;
+    expect(useUpdateDefinitionStore.getState().phase).toEqual({ state: "idle" });
+    expect(api.applyDefinitionUpdate).not.toHaveBeenCalled();
+  });
 });
 
 describe("apply", () => {
@@ -88,5 +104,22 @@ describe("apply", () => {
       state: "done",
       summary: "Applied: 1 new, 0 changed, 1 orphaned",
     });
+  });
+
+  it("is not re-entrant — a second call while applying is a no-op", async () => {
+    let resolveApply!: () => void;
+    vi.mocked(api.applyDefinitionUpdate).mockReturnValue(
+      new Promise((resolve) => {
+        resolveApply = () => resolve(null);
+      }),
+    );
+    useUpdateDefinitionStore.setState({
+      phase: { state: "preview", collectionId: "c1", preview: PREVIEW },
+    });
+    const first = useUpdateDefinitionStore.getState().apply("w1");
+    const second = useUpdateDefinitionStore.getState().apply("w1");
+    resolveApply();
+    await Promise.all([first, second]);
+    expect(api.applyDefinitionUpdate).toHaveBeenCalledTimes(1);
   });
 });

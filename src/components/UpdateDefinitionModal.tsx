@@ -57,6 +57,13 @@ export function UpdateDefinitionModal() {
             </div>
           )}
 
+          {phase.state === "applying" && (
+            <div className="flex items-center gap-2 text-[13px] text-muted">
+              <RefreshCw size={14} className="animate-spin" />
+              Applying…
+            </div>
+          )}
+
           {phase.state === "error" && (
             <div className="rounded-[4px] border border-border bg-secondary px-3 py-2 text-[12px] text-destructive break-all">
               {phase.message}

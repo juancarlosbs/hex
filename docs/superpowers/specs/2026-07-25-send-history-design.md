@@ -42,7 +42,11 @@ One database at `app_data_dir/history.db`, one table:
 CREATE TABLE IF NOT EXISTS history (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   request_id    TEXT NOT NULL,
-  executed_at   TEXT NOT NULL,          -- ISO 8601 UTC
+  executed_at_ms INTEGER NOT NULL,      -- unix milliseconds
+  method        TEXT NOT NULL,          -- "GET"/"POST"/… for REST, "SOAP" for both SOAP paths
+  status        INTEGER,                -- HTTP status, None if send failed before response
+  duration_ms   INTEGER,                -- elapsed time in milliseconds, None if failed before response
+  size_bytes    INTEGER,                -- response body size, None if failed before response
   spec_json     TEXT NOT NULL,          -- SendSpec snapshot (for Restore)
   response_json TEXT,                   -- HttpResponse (status, headers, body, timing)
   error         TEXT                    -- set when the send failed
@@ -51,6 +55,7 @@ CREATE INDEX IF NOT EXISTS idx_history_request ON history(request_id, id DESC);
 ```
 
 - `response_json` and `error` are mutually exclusive; exactly one is set.
+- Derived columns (`method`, `status`, `duration_ms`, `size_bytes`) are extracted from the spec and response, enabling the drawer list to show summaries without parsing JSON.
 - Response bodies larger than **1 MB** are truncated before saving; the stored
   JSON carries a `truncated: true` flag so the UI can say so.
 - Pruning: after each insert, delete rows for that `request_id` beyond the 50
@@ -61,12 +66,8 @@ CREATE INDEX IF NOT EXISTS idx_history_request ON history(request_id, id DESC);
 `src-tauri/src/persistence/history.rs`, using **`rusqlite`** (bundled feature —
 rustls rule untouched, no native TLS involved).
 
-> **Divergence from `docs/stack.md`**: stack.md lists `tauri-plugin-sql` as the
-> optional history backend. That plugin exposes SQL to the *frontend*, which
-> would violate the architecture rule that `persistence/` is the only layer
-> touching the data filesystem, and would move persistence logic into the
-> webview. We keep SQLite (per ADR-011) but drive it from Rust with `rusqlite`.
-> Update stack.md in the implementing PR.
+Connections are opened per call (`Connection::open` with 1s busy timeout); no pool.
+Volume is one write per Send and reads on drawer open — SQLite handles this trivially.
 
 API (same shape as `collection.rs` helpers — plain functions over a data dir):
 
@@ -76,9 +77,6 @@ pub fn list(db: &Path, request_id: &str) -> anyhow::Result<Vec<HistoryEntrySumma
 pub fn get(db: &Path, entry_id: i64) -> anyhow::Result<HistoryEntry>;                 // full row
 pub fn clear(db: &Path, request_id: &str) -> anyhow::Result<()>;
 ```
-
-Connections are opened per call (`Connection::open`); no pool. Volume is one
-write per Send and reads on drawer open — SQLite handles this trivially.
 
 ## 5. Capture
 

@@ -111,11 +111,37 @@ pub fn update_request(
     collection::update_request(&dir, &workspace_id, path, content).map_err(|e| e.to_string())
 }
 
+/// Approach B (spec): the send receives an environment id and loads it from disk —
+/// disk is the source of truth even if the frontend is stale. With no active
+/// environment we interpolate against an empty one, so any {{var}} fails loud.
+fn resolve_environment(
+    app: &tauri::AppHandle,
+    workspace_id: &str,
+    environment_id: Option<String>,
+) -> Result<Environment, String> {
+    let Some(id) = environment_id else {
+        return Ok(Environment {
+            id: String::new(),
+            name: String::new(),
+            variables: Default::default(),
+        });
+    };
+    let dir = data_dir(app)?;
+    crate::persistence::environment::load_environment(&dir, workspace_id, &id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("environment not found: {id}"))
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn send_request(
-    spec: crate::engine::SendSpec,
+    app: tauri::AppHandle,
+    workspace_id: String,
+    environment_id: Option<String>,
+    mut spec: crate::engine::SendSpec,
 ) -> Result<crate::engine::HttpResponse, String> {
+    let environment = resolve_environment(&app, &workspace_id, environment_id)?;
+    crate::engine::apply_env(&mut spec, &environment)?;
     crate::engine::send(spec).await
 }
 
@@ -246,6 +272,9 @@ use crate::engine;
 #[tauri::command]
 #[specta::specta]
 pub async fn send_soap(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    environment_id: Option<String>,
     wsdl_url: String,
     input_element: QName,
     endpoint: String,
@@ -253,6 +282,7 @@ pub async fn send_soap(
     soap_version: String,
     value: FormValue,
 ) -> Result<engine::HttpResponse, String> {
+    let environment = resolve_environment(&app, &workspace_id, environment_id)?;
     let client = http_client()?;
     let fetch = |u: String| {
         let client = client.clone();
@@ -269,6 +299,13 @@ pub async fn send_soap(
         .await
         .map_err(|e| e.to_string())?;
     let schema = wsdl::xsd::build_schema(&set, &input_element).map_err(|e| e.to_string())?;
+
+    let endpoint =
+        crate::domain::env::interpolate(&endpoint, &environment).map_err(|e| e.to_string())?;
+    let soap_action =
+        crate::domain::env::interpolate(&soap_action, &environment).map_err(|e| e.to_string())?;
+    let value = crate::domain::env::interpolate_form_value(&value, &environment)
+        .map_err(|e| e.to_string())?;
 
     let (envelope, meta) =
         engine::serialize::build_envelope(&schema, &value, &soap_version, &soap_action)
@@ -306,11 +343,22 @@ pub fn parse_envelope(envelope: String, schema: SchemaNode) -> Result<FormValue,
 #[tauri::command]
 #[specta::specta]
 pub async fn send_soap_raw(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    environment_id: Option<String>,
     endpoint: String,
     envelope: String,
     soap_action: String,
     soap_version: String,
 ) -> Result<engine::HttpResponse, String> {
+    let environment = resolve_environment(&app, &workspace_id, environment_id)?;
+    let endpoint =
+        crate::domain::env::interpolate(&endpoint, &environment).map_err(|e| e.to_string())?;
+    let soap_action =
+        crate::domain::env::interpolate(&soap_action, &environment).map_err(|e| e.to_string())?;
+    let envelope =
+        crate::domain::env::interpolate(&envelope, &environment).map_err(|e| e.to_string())?;
+
     let meta = engine::serialize::soap_meta(&soap_version, &soap_action);
     engine::send_soap_envelope(&endpoint, envelope, meta).await
 }

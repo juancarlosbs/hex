@@ -32,6 +32,7 @@ export type {
   OperationRef as WsdlOperation,
   RequestFile as RequestFileData,
 } from "../bindings";
+export type { HistoryEntry, HistoryEntrySummary, HistorySpec } from "../bindings";
 
 /** invoke() rejects with the raw error string — keep that contract for callers. */
 async function unwrap<T>(result: Promise<Result<T, string>>): Promise<T> {
@@ -67,7 +68,8 @@ export const api = {
   updateRequest: (workspaceId: string, path: string[], content: RequestContent) =>
     unwrap(commands.updateRequest(workspaceId, path, content)),
 
-  sendRequest: (spec: SendSpec) => unwrap(commands.sendRequest(spec)),
+  sendRequest: (spec: SendSpec, requestId: string | null) =>
+    unwrap(commands.sendRequest(spec, requestId)),
 
   importWsdl: (url: string) => unwrap(commands.importWsdl(url)),
 
@@ -84,6 +86,7 @@ export const api = {
     soapAction: string;
     soapVersion: string;
     value: FormValue;
+    requestId: string | null;
   }) =>
     unwrap(
       commands.sendSoap(
@@ -93,6 +96,7 @@ export const api = {
         spec.soapAction,
         spec.soapVersion,
         spec.value,
+        spec.requestId,
       ),
     ),
 
@@ -111,9 +115,22 @@ export const api = {
     envelope: string;
     soapAction: string;
     soapVersion: string;
+    requestId: string | null;
   }) =>
-    unwrap(commands.sendSoapRaw(spec.endpoint, spec.envelope, spec.soapAction, spec.soapVersion)),
+    unwrap(
+      commands.sendSoapRaw(
+        spec.endpoint,
+        spec.envelope,
+        spec.soapAction,
+        spec.soapVersion,
+        spec.requestId,
+      ),
+    ),
 
   parseSoapEnvelope: (spec: { envelope: string; schema: SchemaNode }) =>
     unwrap(commands.parseEnvelope(spec.envelope, spec.schema)),
+
+  listHistory: (requestId: string) => unwrap(commands.listHistory(requestId)),
+  getHistoryEntry: (entryId: number) => unwrap(commands.getHistoryEntry(entryId)),
+  clearHistory: (requestId: string) => unwrap(commands.clearHistory(requestId)),
 };

@@ -46,14 +46,23 @@ describe("send", () => {
     req.url = "https://api.dev";
     req.method = "POST";
     await useResponseStore.getState().send(req);
-    expect(api.sendRequest).toHaveBeenCalledWith({
-      method: "POST",
-      url: "https://api.dev",
-      params: req.params,
-      headers: req.headers,
-      body: req.body,
-      auth: req.auth,
-    });
+    expect(api.sendRequest).toHaveBeenCalledWith(
+      {
+        method: "POST",
+        url: "https://api.dev",
+        params: req.params,
+        headers: req.headers,
+        body: req.body,
+        auth: req.auth,
+      },
+      "r1",
+    );
+  });
+
+  it("sends null history id for scratch requests", async () => {
+    vi.mocked(api.sendRequest).mockResolvedValue(RESP);
+    await useResponseStore.getState().send(makeEmptyRequest("tmp", "Tmp"));
+    expect(vi.mocked(api.sendRequest).mock.calls[0][1]).toBeNull();
   });
 
   it("stores the error message on failure", async () => {
@@ -84,7 +93,8 @@ describe("send", () => {
     req.body = { mode: "json", json: '{"a":1}', form: [] };
     await useResponseStore.getState().send(req);
     expect(api.sendRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ body: { mode: "json", json: "", form: [] } })
+      expect.objectContaining({ body: { mode: "json", json: "", form: [] } }),
+      "r1",
     );
     // store body untouched
     expect(req.body.json).toBe('{"a":1}');
@@ -106,7 +116,11 @@ describe("send", () => {
       xmlDraft: null,
     };
     await useResponseStore.getState().send(req);
-    expect(api.sendSoap).toHaveBeenCalledWith({ ...req.soap.meta, value: req.soap.value });
+    expect(api.sendSoap).toHaveBeenCalledWith({
+      ...req.soap.meta,
+      value: req.soap.value,
+      requestId: "r1",
+    });
     expect(api.sendRequest).not.toHaveBeenCalled();
     expect(useResponseStore.getState().responses.r1).toEqual({ state: "done", response: RESP });
   });
@@ -132,6 +146,7 @@ describe("send", () => {
       envelope: "<soapenv:Envelope>edited</soapenv:Envelope>",
       soapAction: "urn:Op",
       soapVersion: "1.2",
+      requestId: "r1",
     });
     expect(api.sendSoap).not.toHaveBeenCalled();
   });

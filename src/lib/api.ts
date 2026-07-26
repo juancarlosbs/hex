@@ -2,6 +2,7 @@
 // Components never call invoke directly — and never import bindings directly either.
 import { commands, type Result } from "../bindings";
 import type {
+  Environment,
   FormValue,
   QName,
   RequestContent,
@@ -15,6 +16,8 @@ import type {
 export type {
   Attribute,
   CollectionNode,
+  Environment,
+  EnvironmentList,
   FormValue,
   HttpResponse,
   MaxOccurs,
@@ -70,7 +73,8 @@ export const api = {
   updateRequest: (workspaceId: string, path: string[], content: RequestContent) =>
     unwrap(commands.updateRequest(workspaceId, path, content)),
 
-  sendRequest: (spec: SendSpec) => unwrap(commands.sendRequest(spec)),
+  sendRequest: (workspaceId: string, environmentId: string | null, spec: SendSpec) =>
+    unwrap(commands.sendRequest(workspaceId, environmentId, spec)),
 
   importWsdl: (url: string) => unwrap(commands.importWsdl(url)),
 
@@ -80,16 +84,22 @@ export const api = {
   getOperationSchema: (wsdlUrl: string, inputElement: QName) =>
     unwrap(commands.getOperationSchema(wsdlUrl, inputElement)),
 
-  sendSoap: (spec: {
-    wsdlUrl: string;
-    inputElement: QName;
-    endpoint: string;
-    soapAction: string;
-    soapVersion: string;
-    value: FormValue;
-  }) =>
+  sendSoap: (
+    workspaceId: string,
+    environmentId: string | null,
+    spec: {
+      wsdlUrl: string;
+      inputElement: QName;
+      endpoint: string;
+      soapAction: string;
+      soapVersion: string;
+      value: FormValue;
+    },
+  ) =>
     unwrap(
       commands.sendSoap(
+        workspaceId,
+        environmentId,
         spec.wsdlUrl,
         spec.inputElement,
         spec.endpoint,
@@ -109,14 +119,30 @@ export const api = {
       commands.buildSoapEnvelope(spec.schema, spec.soapAction, spec.soapVersion, spec.value),
     ),
 
-  sendSoapRaw: (spec: {
-    endpoint: string;
-    envelope: string;
-    soapAction: string;
-    soapVersion: string;
-  }) =>
-    unwrap(commands.sendSoapRaw(spec.endpoint, spec.envelope, spec.soapAction, spec.soapVersion)),
+  sendSoapRaw: (
+    workspaceId: string,
+    environmentId: string | null,
+    spec: { endpoint: string; envelope: string; soapAction: string; soapVersion: string },
+  ) =>
+    unwrap(
+      commands.sendSoapRaw(
+        workspaceId,
+        environmentId,
+        spec.endpoint,
+        spec.envelope,
+        spec.soapAction,
+        spec.soapVersion,
+      ),
+    ),
 
   parseSoapEnvelope: (spec: { envelope: string; schema: SchemaNode }) =>
     unwrap(commands.parseEnvelope(spec.envelope, spec.schema)),
+
+  listEnvironments: (workspaceId: string) => unwrap(commands.listEnvironments(workspaceId)),
+
+  saveEnvironment: (workspaceId: string, environment: Environment) =>
+    unwrap(commands.saveEnvironment(workspaceId, environment)),
+
+  deleteEnvironment: (workspaceId: string, id: string) =>
+    unwrap(commands.deleteEnvironment(workspaceId, id)),
 };

@@ -262,7 +262,7 @@ function WorkspacesSection({ onClose }: { onClose: () => void }) {
 }
 
 function EnvironmentsSection({ onClose }: { onClose: () => void }) {
-  const { environments, addEnv, removeEnv, updateVariables } = useEnvStore();
+  const { environments, addEnv, removeEnv, updateVariables, loadErrors } = useEnvStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<"table" | "json">("table");
   const [addOpen, setAddOpen] = useState(false);
@@ -275,7 +275,7 @@ function EnvironmentsSection({ onClose }: { onClose: () => void }) {
   function openEnv(id: string) {
     const env = environments.find((e) => e.id === id)!;
     setSelectedId(id);
-    setJsonText(JSON.stringify(env.variables, null, 2));
+    setJsonText(JSON.stringify(env.variables ?? {}, null, 2));
     setJsonError(false);
     setView("table");
   }
@@ -294,14 +294,14 @@ function EnvironmentsSection({ onClose }: { onClose: () => void }) {
 
   function handleVarValueChange(key: string, value: string) {
     if (!selected) return;
-    const vars = { ...selected.variables, [key]: value };
+    const vars = { ...(selected.variables ?? {}), [key]: value } as Record<string, string>;
     updateVariables(selected.id, vars);
     setJsonText(JSON.stringify(vars, null, 2));
   }
 
   function handleVarKeyRename(oldKey: string, newKey: string) {
     if (!selected || !newKey.trim() || newKey === oldKey) return;
-    const entries = Object.entries(selected.variables).map(([k, v]) =>
+    const entries = Object.entries(selected.variables ?? {}).map(([k, v]) =>
       k === oldKey ? [newKey.trim(), v] : [k, v],
     );
     const vars = Object.fromEntries(entries);
@@ -312,8 +312,8 @@ function EnvironmentsSection({ onClose }: { onClose: () => void }) {
   function handleVarDelete(key: string) {
     if (!selected) return;
     const vars = Object.fromEntries(
-      Object.entries(selected.variables).filter(([k]) => k !== key),
-    );
+      Object.entries(selected.variables ?? {}).filter(([k]) => k !== key),
+    ) as Record<string, string>;
     updateVariables(selected.id, vars);
     setJsonText(JSON.stringify(vars, null, 2));
   }
@@ -322,7 +322,7 @@ function EnvironmentsSection({ onClose }: { onClose: () => void }) {
     if (!selected) return;
     let key = "NEW_VAR";
     let i = 1;
-    while (key in selected.variables) key = `NEW_VAR_${i++}`;
+    while (key in (selected.variables ?? {})) key = `NEW_VAR_${i++}`;
     handleVarValueChange(key, "");
   }
 
@@ -343,14 +343,14 @@ function EnvironmentsSection({ onClose }: { onClose: () => void }) {
   }
 
   function switchToJson() {
-    if (selected) setJsonText(JSON.stringify(selected.variables, null, 2));
+    if (selected) setJsonText(JSON.stringify(selected.variables ?? {}, null, 2));
     setView("json");
     setJsonError(false);
   }
 
   // ── Detail mode ──
   if (selected) {
-    const entries = Object.entries(selected.variables);
+    const entries = Object.entries(selected.variables ?? {});
     return (
       <div className="flex flex-col h-full">
         {/* Header: back + dot + name + count + toggle + close */}
@@ -535,9 +535,17 @@ function EnvironmentsSection({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
+      {loadErrors.length > 0 && (
+        <div className="text-[11px] text-destructive px-1 pb-2">
+          {loadErrors.map((e) => (
+            <div key={e}>Failed to load: {e}</div>
+          ))}
+        </div>
+      )}
+
       <div className="flex flex-col gap-[2px]">
         {environments.map((env) => {
-          const varCount = Object.keys(env.variables).length;
+          const varCount = Object.keys(env.variables ?? {}).length;
           return (
             <div
               key={env.id}

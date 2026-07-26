@@ -122,11 +122,54 @@ pub fn update_request(
     collection::update_request(&dir, &workspace_id, path, content).map_err(|e| e.to_string())
 }
 
+/// Approach B (spec): the send receives an environment id and loads it from disk —
+/// disk is the source of truth even if the frontend is stale. With no active
+/// environment we interpolate against an empty one, so any {{var}} fails loud;
+/// the returned bool flags that "no environment selected" case (as opposed to a
+/// stale/unknown id, which fails here instead) so callers can hint at the titlebar.
+fn resolve_environment(
+    app: &tauri::AppHandle,
+    workspace_id: &str,
+    environment_id: Option<String>,
+) -> Result<(Environment, bool), String> {
+    let Some(id) = environment_id else {
+        return Ok((
+            Environment {
+                id: String::new(),
+                name: String::new(),
+                variables: Default::default(),
+            },
+            true,
+        ));
+    };
+    let dir = data_dir(app)?;
+    let environment = crate::persistence::environment::load_environment(&dir, workspace_id, &id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("environment not found: {id}"))?;
+    Ok((environment, false))
+}
+
+/// Appends a hint to an interpolation error when no environment was active at
+/// all (spec: "no active env" row of the error table) — points at the titlebar
+/// selector instead of leaving the user guessing why an otherwise-valid {{var}} failed.
+fn with_env_hint(error: String, no_environment_selected: bool) -> String {
+    if no_environment_selected {
+        format!("{error} — no environment selected; choose one in the titlebar")
+    } else {
+        error
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn send_request(
-    spec: crate::engine::SendSpec,
+    app: tauri::AppHandle,
+    workspace_id: String,
+    environment_id: Option<String>,
+    mut spec: crate::engine::SendSpec,
 ) -> Result<crate::engine::HttpResponse, String> {
+    let (environment, no_env) = resolve_environment(&app, &workspace_id, environment_id)?;
+    crate::engine::apply_env(&mut spec, &environment).map_err(|e| with_env_hint(e, no_env))?;
     crate::engine::send(spec).await
 }
 
@@ -256,7 +299,11 @@ use crate::engine;
 
 #[tauri::command]
 #[specta::specta]
+#[allow(clippy::too_many_arguments)]
 pub async fn send_soap(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    environment_id: Option<String>,
     wsdl_url: String,
     input_element: QName,
     endpoint: String,
@@ -264,6 +311,17 @@ pub async fn send_soap(
     soap_version: String,
     value: FormValue,
 ) -> Result<engine::HttpResponse, String> {
+    let (environment, no_env) = resolve_environment(&app, &workspace_id, environment_id)?;
+
+    // Interpolate first: none of these need the schema, so an unknown {{var}}
+    // fails before the WSDL fetch — zero network activity (spec row 1/2).
+    let endpoint = crate::domain::env::interpolate(&endpoint, &environment)
+        .map_err(|e| with_env_hint(format!("{e} in endpoint"), no_env))?;
+    let soap_action = crate::domain::env::interpolate(&soap_action, &environment)
+        .map_err(|e| with_env_hint(format!("{e} in SOAPAction"), no_env))?;
+    let value = crate::domain::env::interpolate_form_value(&value, &environment)
+        .map_err(|e| with_env_hint(format!("{e} in form value"), no_env))?;
+
     let client = http_client()?;
     let fetch = |u: String| {
         let client = client.clone();
@@ -317,11 +375,77 @@ pub fn parse_envelope(envelope: String, schema: SchemaNode) -> Result<FormValue,
 #[tauri::command]
 #[specta::specta]
 pub async fn send_soap_raw(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    environment_id: Option<String>,
     endpoint: String,
     envelope: String,
     soap_action: String,
     soap_version: String,
 ) -> Result<engine::HttpResponse, String> {
+    let (environment, no_env) = resolve_environment(&app, &workspace_id, environment_id)?;
+    let endpoint = crate::domain::env::interpolate(&endpoint, &environment)
+        .map_err(|e| with_env_hint(format!("{e} in endpoint"), no_env))?;
+    let soap_action = crate::domain::env::interpolate(&soap_action, &environment)
+        .map_err(|e| with_env_hint(format!("{e} in SOAPAction"), no_env))?;
+    let envelope = crate::domain::env::interpolate(&envelope, &environment)
+        .map_err(|e| with_env_hint(format!("{e} in envelope"), no_env))?;
+
     let meta = engine::serialize::soap_meta(&soap_version, &soap_action);
     engine::send_soap_envelope(&endpoint, envelope, meta).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::with_env_hint;
+
+    #[test]
+    fn with_env_hint_appends_hint_when_no_environment_selected() {
+        let msg = with_env_hint("undefined variable: {{host}} in URL".to_string(), true);
+        assert_eq!(
+            msg,
+            "undefined variable: {{host}} in URL — no environment selected; choose one in the titlebar"
+        );
+    }
+
+    #[test]
+    fn with_env_hint_leaves_message_unchanged_when_environment_selected() {
+        let msg = with_env_hint("undefined variable: {{host}} in URL".to_string(), false);
+        assert_eq!(msg, "undefined variable: {{host}} in URL");
+    }
+}
+
+use crate::domain::env::Environment;
+use crate::persistence::environment as env_store;
+
+#[tauri::command]
+#[specta::specta]
+pub fn list_environments(
+    app: tauri::AppHandle,
+    workspace_id: String,
+) -> Result<env_store::EnvironmentList, String> {
+    let dir = data_dir(&app)?;
+    env_store::list_environments(&dir, &workspace_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn save_environment(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    environment: Environment,
+) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    env_store::save_environment(&dir, &workspace_id, &environment).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn delete_environment(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    id: String,
+) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    env_store::delete_environment(&dir, &workspace_id, &id).map_err(|e| e.to_string())
 }

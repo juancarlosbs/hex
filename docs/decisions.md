@@ -219,3 +219,17 @@ Format: **Status** (Accepted / Proposed / Superseded) · Context · Decision · 
 **Alternatives**: witch (homophone of "which", bad SEO), Cauldron, Wraith, Rune.
 
 **Consequences**: 3-letter name, typeable, with 4 layers of meaning that reinforce the project itself. Domain/registration: use subdomain of personal domain (hex.<domain>.dev) instead of buying a dedicated domain.
+
+---
+
+## ADR-017 — Environment variables: TOML per environment, resolved from disk at send time
+
+**Status**: Accepted
+
+**Context**: `{{var}}` interpolation is an MVP differentiator-adjacent feature (product.md 🟢⭐). It needed a storage shape, an owner for the authoritative substitution, and a contract for the active environment. The frontend had a placeholder `envStore` over tauri-plugin-store whose init was never called.
+
+**Decision**: (1) One TOML file per environment at `workspaces/<ws>/environments/<id>.toml` (git-friendly, ADR-011 spirit). (2) Interpolation is a pure domain function (`domain/env.rs`), authoritative in Rust, applied to everything that goes on the wire — gated by the active body mode. (3) Send commands receive `environment_id` and load the environment **from disk** on every send ("approach B"): disk is the source of truth even if the frontend is stale, and unknown ids fail before any network activity. (4) The active environment id is per-workspace **UI state** in the frontend plugin-store (`activeEnv:<ws>`), since workspace metadata itself lives there — only environment *content* is Rust-owned. (5) Unresolved `{{var}}` always fails the send, naming the variable and the field; no silent literal passthrough.
+
+**Alternatives**: passing the full Environment object from the frontend (simpler, but the frontend becomes the effective source of truth); Rust-held active-environment state (stateful backend, more surface, round-trips for preview).
+
+**Consequences**: Environments version and diff cleanly with the workspace; a hand-edited TOML is picked up on the next send with no reload; the frontend preview is explicitly UX-only. Cost: one extra disk read per send — negligible against network latency.

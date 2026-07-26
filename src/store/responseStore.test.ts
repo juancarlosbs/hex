@@ -8,6 +8,7 @@ import { useResponseStore } from "./responseStore";
 import { makeEmptyRequest } from "../lib/request-types";
 import { HttpResponse } from "../lib/response-types";
 import { api } from "../lib/api";
+import { useEnvStore } from "./envStore";
 
 const RESP: HttpResponse = {
   status: 200,
@@ -46,7 +47,7 @@ describe("send", () => {
     req.url = "https://api.dev";
     req.method = "POST";
     await useResponseStore.getState().send(req);
-    expect(api.sendRequest).toHaveBeenCalledWith({
+    expect(api.sendRequest).toHaveBeenCalledWith("default", null, {
       method: "POST",
       url: "https://api.dev",
       params: req.params,
@@ -84,6 +85,8 @@ describe("send", () => {
     req.body = { mode: "json", json: '{"a":1}', form: [] };
     await useResponseStore.getState().send(req);
     expect(api.sendRequest).toHaveBeenCalledWith(
+      "default",
+      null,
       expect.objectContaining({ body: { mode: "json", json: "", form: [] } })
     );
     // store body untouched
@@ -106,7 +109,10 @@ describe("send", () => {
       xmlDraft: null,
     };
     await useResponseStore.getState().send(req);
-    expect(api.sendSoap).toHaveBeenCalledWith({ ...req.soap.meta, value: req.soap.value });
+    expect(api.sendSoap).toHaveBeenCalledWith("default", null, {
+      ...req.soap.meta,
+      value: req.soap.value,
+    });
     expect(api.sendRequest).not.toHaveBeenCalled();
     expect(useResponseStore.getState().responses.r1).toEqual({ state: "done", response: RESP });
   });
@@ -127,13 +133,33 @@ describe("send", () => {
       xmlDraft: "<soapenv:Envelope>edited</soapenv:Envelope>",
     };
     await useResponseStore.getState().send(req);
-    expect(api.sendSoapRaw).toHaveBeenCalledWith({
+    expect(api.sendSoapRaw).toHaveBeenCalledWith("default", null, {
       endpoint: "https://example.com/service",
       envelope: "<soapenv:Envelope>edited</soapenv:Envelope>",
       soapAction: "urn:Op",
       soapVersion: "1.2",
     });
     expect(api.sendSoap).not.toHaveBeenCalled();
+  });
+});
+
+describe("send error triggers environment reload", () => {
+  it("reloads the env list when the send fails with a stale environment id", async () => {
+    vi.mocked(api.sendRequest).mockRejectedValue("environment not found: gone");
+    const loadSpy = vi.spyOn(useEnvStore.getState(), "load").mockResolvedValue(undefined);
+
+    await useResponseStore.getState().send(request());
+
+    expect(loadSpy).toHaveBeenCalledWith("default");
+  });
+
+  it("does not reload the env list for other send errors", async () => {
+    vi.mocked(api.sendRequest).mockRejectedValue("connection refused");
+    const loadSpy = vi.spyOn(useEnvStore.getState(), "load").mockResolvedValue(undefined);
+
+    await useResponseStore.getState().send(request());
+
+    expect(loadSpy).not.toHaveBeenCalled();
   });
 });
 

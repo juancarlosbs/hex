@@ -141,7 +141,7 @@ fn resolve_path(root: &Path, ids: &[String]) -> PathBuf {
     ids.iter().fold(root.to_path_buf(), |p, id| p.join(id))
 }
 
-fn validate_ids(ids: &[String]) -> anyhow::Result<()> {
+pub(crate) fn validate_ids(ids: &[String]) -> anyhow::Result<()> {
     for id in ids {
         if id.contains('/') || id.contains('\\') || id == ".." || id == "." {
             anyhow::bail!("invalid id: {id}");

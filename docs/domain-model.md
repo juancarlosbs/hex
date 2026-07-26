@@ -182,11 +182,13 @@ it fails, returns the issues and does not send.
 
 ## 6. Variable interpolation (`domain/env.rs`)
 
-`{{var}}` is resolved in the domain (pure), before serializing — applies to URL, headers, and
-leaf values.
+`{{var}}` is resolved in the domain (pure), before serializing — applied at send time to
+everything that goes on the wire: URL, query params, headers, the active body mode, auth
+fields, SOAP form leaves (`interpolate_form_value`), SOAPAction, endpoint, and raw envelopes.
+Errors name the field they occurred in (e.g. `undefined variable: {{host}} in URL`).
 
 ```rust
-pub struct Environment { pub name: String, pub vars: BTreeMap<String, String> }
+pub struct Environment { pub id: String, pub name: String, pub variables: BTreeMap<String, String> }
 
 /// Substitutes {{key}} with values from the environment. Missing variable -> DomainError::UnknownVar.
 pub fn interpolate(template: &str, env: &Environment) -> Result<String, DomainError>;

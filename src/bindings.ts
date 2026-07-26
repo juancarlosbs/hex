@@ -152,6 +152,30 @@ async parseEnvelope(envelope: string, schema: SchemaNode) : Promise<Result<FormV
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+async listEnvironments(workspaceId: string) : Promise<Result<EnvironmentList, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_environments", { workspaceId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveEnvironment(workspaceId: string, environment: Environment) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_environment", { workspaceId, environment }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteEnvironment(workspaceId: string, id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_environment", { workspaceId, id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -169,6 +193,16 @@ export type Attribute = { name: string; xsdType: XsdType; required: boolean; enu
 export type AuthData = { type: "none" } | { type: "basic"; username: string; password: string } | { type: "bearer"; token: string } | { type: "apikey"; key: string; value: string; addTo: string }
 export type BodyData = { mode: string; json: string; form: KeyValueEntry[] }
 export type CollectionNode = { type: "folder"; id: string; name: string; children: CollectionNode[] } | ({ type: "request" } & RequestNode)
+/**
+ * A named set of variables. BTreeMap keeps TOML/JSON output sorted -> stable git diffs.
+ */
+export type Environment = { id: string; name: string; variables?: Partial<{ [key in string]: string }> }
+export type EnvironmentList = { environments: Environment[]; 
+/**
+ * Per-file load failures ("file.toml: message") — corrupt files are
+ * reported, never silently skipped (F2 spirit).
+ */
+errors: string[] }
 /**
  * The instance the user filled in. Mirrors `NodeKind`; the serializer walks the
  * pair (SchemaNode, FormValue). See docs/domain-model.md §3.

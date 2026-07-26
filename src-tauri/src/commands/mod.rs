@@ -314,3 +314,38 @@ pub async fn send_soap_raw(
     let meta = engine::serialize::soap_meta(&soap_version, &soap_action);
     engine::send_soap_envelope(&endpoint, envelope, meta).await
 }
+
+use crate::domain::env::Environment;
+use crate::persistence::environment as env_store;
+
+#[tauri::command]
+#[specta::specta]
+pub fn list_environments(
+    app: tauri::AppHandle,
+    workspace_id: String,
+) -> Result<env_store::EnvironmentList, String> {
+    let dir = data_dir(&app)?;
+    env_store::list_environments(&dir, &workspace_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn save_environment(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    environment: Environment,
+) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    env_store::save_environment(&dir, &workspace_id, &environment).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn delete_environment(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    id: String,
+) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    env_store::delete_environment(&dir, &workspace_id, &id).map_err(|e| e.to_string())
+}

@@ -1,71 +1,71 @@
 import { create } from "zustand";
+import { api, type Environment } from "../lib/api";
 import { getStore } from "../lib/storage";
 
-export interface Environment {
-  id: string;
-  name: string;
-  variables: Record<string, string>;
-}
+export type { Environment };
 
 interface EnvState {
   environments: Environment[];
   activeId: string | null;
+  loadErrors: string[];
+  workspaceId: string | null;
+  load: (workspaceId: string) => Promise<void>;
   setActive: (id: string | null) => void;
-  addEnv: (name: string) => void;
-  removeEnv: (id: string) => void;
-  updateVariables: (id: string, vars: Record<string, string>) => void;
+  addEnv: (name: string) => Promise<void>;
+  removeEnv: (id: string) => Promise<void>;
+  updateVariables: (id: string, vars: Record<string, string>) => Promise<void>;
 }
 
-const DEFAULT: Environment[] = [
-  { id: "development", name: "Development", variables: {} },
-  { id: "staging", name: "Staging", variables: {} },
-  { id: "production", name: "Production", variables: {} },
-];
-
-async function persist(environments: Environment[], activeId: string | null) {
-  const store = await getStore();
-  await store.set("environments", environments);
-  await store.set("activeEnvId", activeId);
-}
+const SEED_NAMES = ["Development", "Staging", "Production"];
 
 export const useEnvStore = create<EnvState>((set, get) => ({
-  environments: DEFAULT,
-  activeId: "development",
+  environments: [],
+  activeId: null,
+  loadErrors: [],
+  workspaceId: null,
+
+  async load(workspaceId) {
+    let { environments, errors } = await api.listEnvironments(workspaceId);
+    if (environments.length === 0 && errors.length === 0) {
+      // first run in this workspace: seed the standard three
+      for (const name of SEED_NAMES) {
+        await api.saveEnvironment(workspaceId, { id: crypto.randomUUID(), name, variables: {} });
+      }
+      ({ environments, errors } = await api.listEnvironments(workspaceId));
+    }
+    const store = await getStore();
+    const saved = await store.get<string | null>(`activeEnv:${workspaceId}`);
+    const activeId = environments.some((e) => e.id === saved) ? (saved as string) : null;
+    set({ environments, loadErrors: errors, workspaceId, activeId });
+  },
 
   setActive(id) {
     set({ activeId: id });
-    persist(get().environments, id);
+    const ws = get().workspaceId;
+    if (ws) getStore().then((s) => s.set(`activeEnv:${ws}`, id));
   },
 
-  addEnv(name) {
-    const env: Environment = { id: crypto.randomUUID(), name, variables: {} };
-    const environments = [...get().environments, env];
-    set({ environments });
-    persist(environments, get().activeId);
+  async addEnv(name) {
+    const ws = get().workspaceId;
+    if (!ws) return;
+    await api.saveEnvironment(ws, { id: crypto.randomUUID(), name, variables: {} });
+    await get().load(ws);
   },
 
-  updateVariables(id, vars) {
-    const environments = get().environments.map((e) =>
-      e.id === id ? { ...e, variables: vars } : e
-    );
-    set({ environments });
-    persist(environments, get().activeId);
+  async removeEnv(id) {
+    const ws = get().workspaceId;
+    // ponytail: never delete the last environment (mirrors workspaceStore)
+    if (!ws || get().environments.length <= 1) return;
+    await api.deleteEnvironment(ws, id);
+    if (get().activeId === id) get().setActive(null);
+    await get().load(ws);
   },
 
-  removeEnv(id) {
-    const environments = get().environments.filter((e) => e.id !== id);
-    if (environments.length === 0) return;
-    const activeId = get().activeId === id ? null : get().activeId;
-    set({ environments, activeId });
-    persist(environments, activeId);
+  async updateVariables(id, vars) {
+    const ws = get().workspaceId;
+    const env = get().environments.find((e) => e.id === id);
+    if (!ws || !env) return;
+    await api.saveEnvironment(ws, { ...env, variables: vars });
+    await get().load(ws);
   },
 }));
-
-export async function initEnvStore() {
-  const store = await getStore();
-  const environments = await store.get<Environment[]>("environments");
-  const activeId = await store.get<string | null>("activeEnvId");
-  if (environments && environments.length > 0) {
-    useEnvStore.setState({ environments, activeId: activeId ?? null });
-  }
-}

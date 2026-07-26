@@ -46,7 +46,7 @@ describe("send", () => {
     req.url = "https://api.dev";
     req.method = "POST";
     await useResponseStore.getState().send(req);
-    expect(api.sendRequest).toHaveBeenCalledWith("default", "development", {
+    expect(api.sendRequest).toHaveBeenCalledWith("default", null, {
       method: "POST",
       url: "https://api.dev",
       params: req.params,
@@ -85,7 +85,7 @@ describe("send", () => {
     await useResponseStore.getState().send(req);
     expect(api.sendRequest).toHaveBeenCalledWith(
       "default",
-      "development",
+      null,
       expect.objectContaining({ body: { mode: "json", json: "", form: [] } })
     );
     // store body untouched
@@ -108,7 +108,7 @@ describe("send", () => {
       xmlDraft: null,
     };
     await useResponseStore.getState().send(req);
-    expect(api.sendSoap).toHaveBeenCalledWith("default", "development", {
+    expect(api.sendSoap).toHaveBeenCalledWith("default", null, {
       ...req.soap.meta,
       value: req.soap.value,
     });
@@ -132,7 +132,7 @@ describe("send", () => {
       xmlDraft: "<soapenv:Envelope>edited</soapenv:Envelope>",
     };
     await useResponseStore.getState().send(req);
-    expect(api.sendSoapRaw).toHaveBeenCalledWith("default", "development", {
+    expect(api.sendSoapRaw).toHaveBeenCalledWith("default", null, {
       endpoint: "https://example.com/service",
       envelope: "<soapenv:Envelope>edited</soapenv:Envelope>",
       soapAction: "urn:Op",

@@ -64,8 +64,24 @@ pub fn rename_node(
     collection::rename_node(&dir, &workspace_id, path, &name).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-#[specta::specta]
+/// Deletes a collection node from a workspace.
+///
+/// # Errors
+///
+/// Returns an error if the application data directory cannot be resolved or
+/// the node cannot be deleted.
+///
+/// # Examples
+///
+/// ```no_run
+/// let app = todo!();
+/// delete_node(
+///     app,
+///     "workspace-id".to_owned(),
+///     vec!["folder".to_owned(), "request".to_owned()],
+/// )?;
+/// # Ok::<(), String>(())
+/// ```
 pub fn delete_node(
     app: tauri::AppHandle,
     workspace_id: String,
@@ -75,6 +91,15 @@ pub fn delete_node(
     collection::delete_node(&dir, &workspace_id, path).map_err(|e| e.to_string())
 }
 
+/// Duplicates a collection tree node within a workspace.
+///
+/// # Examples
+///
+/// ```no_run
+/// let app = todo!();
+/// let result = duplicate_node(app, "workspace-id".into(), vec!["folder".into(), "request".into()]);
+/// assert!(result.is_ok());
+/// ```
 #[tauri::command]
 #[specta::specta]
 pub fn duplicate_node(
@@ -86,8 +111,18 @@ pub fn duplicate_node(
     collection::duplicate_node(&dir, &workspace_id, path).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-#[specta::specta]
+/// Reorders the child nodes of a collection or folder.
+///
+/// `ordered_ids` specifies the desired child order for the node at `parent_path`.
+///
+/// # Examples
+///
+/// ```no_run
+/// let result = reorder_children(app, workspace_id, parent_path, ordered_ids);
+/// assert!(result.is_ok());
+/// ```
+///
+/// Returns an error if the workspace, parent path, or requested ordering is invalid.
 pub fn reorder_children(
     app: tauri::AppHandle,
     workspace_id: String,

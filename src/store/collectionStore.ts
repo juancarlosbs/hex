@@ -143,6 +143,14 @@ function reorderInTree(tree: CollectionNode[], parentPath: string[], orderedIds:
   });
 }
 
+/**
+ * Updates the method and URL of a REST request at the specified path.
+ *
+ * @param path - The request's location in the collection tree.
+ * @param method - The request method to assign.
+ * @param url - The request URL to assign.
+ * @returns A collection tree with the matching REST request updated.
+ */
 function updateRequestNode(tree: CollectionNode[], path: string[], method: string, url: string): CollectionNode[] {
   if (path.length === 1) {
     return tree.map((n) =>
@@ -155,6 +163,14 @@ function updateRequestNode(tree: CollectionNode[], path: string[], method: strin
   });
 }
 
+/**
+ * Inserts a collection node immediately after the node identified by a path.
+ *
+ * @param tree - The collection tree to update.
+ * @param path - The node identifier path locating the insertion point.
+ * @param node - The collection node to insert.
+ * @returns A collection tree with `node` inserted after the target.
+ */
 function insertAfter(tree: CollectionNode[], path: string[], node: CollectionNode): CollectionNode[] {
   if (path.length === 1) {
     const i = tree.findIndex((n) => n.id === path[0]);

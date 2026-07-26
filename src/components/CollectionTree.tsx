@@ -37,6 +37,15 @@ type MenuAction =
   | { type: "newFolder"; parentPath: string[] }
   | { type: "newRequest"; parentPath: string[] };
 
+/**
+ * Renders a context menu at the specified screen coordinates.
+ *
+ * @param x - The horizontal screen coordinate.
+ * @param y - The vertical screen coordinate.
+ * @param actions - The actions displayed in the menu.
+ * @param onAction - Handles selection of a menu action.
+ * @param onClose - Closes the menu.
+ */
 function ContextMenu({
   x,
   y,
@@ -87,7 +96,13 @@ function ContextMenu({
   );
 }
 
-// ── Confirm delete modal ──────────────────────────────────────────────────
+/**
+ * Displays a confirmation dialog for deleting an item.
+ *
+ * @param name - The name of the item to delete
+ * @param onConfirm - Called when deletion is confirmed
+ * @param onCancel - Called when deletion is canceled or the backdrop is pressed
+ */
 
 function ConfirmDeleteModal({
   name,
@@ -132,7 +147,13 @@ function ConfirmDeleteModal({
   );
 }
 
-// ── Inline rename input ───────────────────────────────────────────────────────
+/**
+ * Provides an inline editor for renaming an item.
+ *
+ * @param initial - The current item name, used when the edited value is empty.
+ * @param onCommit - Called with the trimmed name when editing is committed.
+ * @param onCancel - Called when editing is canceled.
+ */
 
 function RenameInput({
   initial,
@@ -304,7 +325,9 @@ function PendingCreationRow({
   );
 }
 
-// ── Folder item ───────────────────────────────────────────────────────────────
+/**
+ * Renders a sortable, expandable folder item with creation, rename, duplicate, and delete actions.
+ */
 
 function SortableFolderItem({
   node,
@@ -338,6 +361,11 @@ function SortableFolderItem({
     setMenu({ x: e.clientX, y: e.clientY });
   }
 
+  /**
+   * Handles a context-menu action for the current tree item.
+   *
+   * @param a - The action to perform.
+   */
   function handleAction(a: MenuAction) {
     if (a.type === "rename") setRenaming(true);
     if (a.type === "duplicate") duplicate(workspaceId, path);
@@ -414,7 +442,13 @@ function SortableFolderItem({
   );
 }
 
-// ── Request item ──────────────────────────────────────────────────────────────
+/**
+ * Renders a sortable request item with activation, renaming, duplication, deletion, and context-menu actions.
+ *
+ * @param node - The request node to render
+ * @param path - The request's location in the collection tree
+ * @param workspaceId - The workspace containing the request
+ */
 
 function SortableRequestItem({
   node,
@@ -450,6 +484,11 @@ function SortableRequestItem({
     setMenu({ x: e.clientX, y: e.clientY });
   }
 
+  /**
+   * Handles a context-menu action for the current item.
+   *
+   * @param a - The action to execute.
+   */
   function handleAction(a: MenuAction) {
     if (a.type === "rename") setRenaming(true);
     if (a.type === "duplicate") duplicate(workspaceId, path);

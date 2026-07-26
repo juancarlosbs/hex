@@ -4,6 +4,13 @@ mod engine;
 mod persistence;
 mod wsdl;
 
+/// Creates a Tauri Specta builder with the application's command handlers registered.
+///
+/// # Examples
+///
+/// ```
+/// let _builder = specta_builder();
+/// ```
 fn specta_builder() -> tauri_specta::Builder {
     tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
         commands::list_collections,

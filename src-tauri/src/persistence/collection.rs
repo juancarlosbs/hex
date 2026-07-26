@@ -379,6 +379,25 @@ pub fn rename_node(
     Ok(())
 }
 
+/// Deletes a collection or request and removes its identifier from the
+/// corresponding child ordering metadata.
+///
+/// `path` identifies the node relative to the workspace collections root.
+///
+— # Examples
+///
+/// ```no_run
+/// # use std::path::Path;
+/// # fn example() -> anyhow::Result<()> {
+/// delete_node(Path::new("./data"), "workspace-id", vec!["collection-id".into()])?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Errors
+///
+/// Returns an error if the path is invalid or the node or metadata cannot be
+/// removed or updated.
 pub fn delete_node(data_dir: &Path, workspace_id: &str, path: Vec<String>) -> anyhow::Result<()> {
     validate_ids(&path)?;
     let root = collections_root(data_dir, workspace_id);
@@ -403,6 +422,15 @@ pub fn delete_node(data_dir: &Path, workspace_id: &str, path: Vec<String>) -> an
     Ok(())
 }
 
+/// Inserts an identifier immediately after a specified identifier, or at the end if the specified identifier is absent.
+///
+/// # Examples
+///
+/// ```
+/// let mut order = vec!["first".to_string(), "third".to_string()];
+/// insert_after(&mut order, "first", "second".to_string());
+/// assert_eq!(order, ["first", "second", "third"]);
+/// ```
 fn insert_after(order: &mut Vec<String>, after: &str, id: String) {
     let pos = order
         .iter()
@@ -412,6 +440,29 @@ fn insert_after(order: &mut Vec<String>, after: &str, id: String) {
     order.insert(pos, id);
 }
 
+/// Recursively copies a folder and its descendants with newly generated IDs.
+///
+/// The top-level copied folder receives a `" copy"` suffix; descendant folder names
+/// are preserved. Request contents are preserved with fresh request IDs.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use std::path::Path;
+/// let (id, node) = copy_folder_recursive(
+///     Path::new("/data/source-folder"),
+///     Path::new("/data/destination"),
+///     true,
+/// ).unwrap();
+/// assert!(!id.is_empty());
+/// assert!(matches!(node, CollectionNode::Folder { .. }));
+/// ```
+///
+/// # Errors
+///
+/// Returns an error if folder metadata or request files cannot be read, if copied
+/// data cannot be serialized, or if destination files cannot be created or written.
+fn copy_folder_recursive(
 fn copy_folder_recursive(
     src: &Path,
     dest_parent: &Path,
@@ -458,6 +509,31 @@ fn copy_folder_recursive(
     Ok((id.clone(), CollectionNode::Folder { id, name, children }))
 }
 
+/// Duplicates a collection or request and places the copy immediately after the original.
+///
+/// Folder descendants receive fresh IDs. The duplicated top-level node is suffixed with
+/// `" copy"`, while descendant names are preserved.
+///
+/// # Arguments
+///
+/// * `path` - Identifiers from the collection root to the node being duplicated.
+///
+/// # Returns
+///
+/// The duplicated collection or request node.
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::path::Path;
+///
+/// let duplicate = duplicate_node(
+///     Path::new("/data"),
+///     "workspace-1",
+///     vec!["collection-id".into(), "request-id".into()],
+/// )?;
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub fn duplicate_node(
     data_dir: &Path,
     workspace_id: &str,
@@ -498,6 +574,21 @@ pub fn duplicate_node(
     Ok(node)
 }
 
+/// Reorders the children of the workspace root or a specified folder.
+///
+/// # Examples
+///
+/// ```
+/// # use tempfile::tempdir;
+/// # let data_dir = tempdir().unwrap();
+/// reorder_children(
+///     data_dir.path(),
+///     "workspace-id",
+///     vec![],
+///     vec!["collection-id".to_string()],
+/// ).unwrap();
+/// ```
+pub fn reorder_children
 pub fn reorder_children(
     data_dir: &Path,
     workspace_id: &str,

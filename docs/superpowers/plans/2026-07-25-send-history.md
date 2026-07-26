@@ -1363,7 +1363,7 @@ git commit -m "feat(history): drawer UI with view, restore and clear"
 
 Replace the optional `tauri-plugin-sql` line (`docs/stack.md:75`) with:
 
-```
+```toml
 rusqlite = { version = "<version cargo resolved>", features = ["bundled"] }  # history DB (ADR-011), driven from Rust — plugin-sql would expose SQL to the webview
 ```
 

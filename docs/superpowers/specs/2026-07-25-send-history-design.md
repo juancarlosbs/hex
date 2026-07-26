@@ -16,7 +16,7 @@ send failed. A clock button on the request bar opens a drawer listing past
 executions. Clicking an entry shows its saved response in the Response Panel;
 an explicit **Restore** action loads the request snapshot back into the editor.
 
-Applies to both REST (`send_request`) and SOAP (`send_soap`).
+Applies to REST (`send_request`) and both SOAP send paths (`send_soap`, `send_soap_raw`).
 
 ## 2. Goals / Non-goals
 
@@ -80,11 +80,11 @@ pub fn clear(db: &Path, request_id: &str) -> anyhow::Result<()>;
 
 ## 5. Capture
 
-`send_request` and `send_soap` gain an optional `request_id: Option<String>`
-parameter. After the send resolves — success **or** error — the command appends
-a history entry, then returns the original result. `request_id: None` (unsaved
-request) skips recording. No separate "record" command; recording happens where
-the send happens, in one place per protocol.
+`send_request`, `send_soap`, and `send_soap_raw` gain an optional
+`request_id: Option<String>` parameter. After the send resolves — success **or**
+error — the command appends a history entry, then returns the original result.
+`request_id: None` (unsaved request) skips recording. No separate "record"
+command; recording happens where the send happens, in one place per protocol.
 
 A history write failure must not fail the send: log it, return the response.
 
@@ -123,6 +123,11 @@ Regenerate `src/bindings.ts` after adding them.
 - Entry deleted between list and get: `get_history_entry` returns a not-found
   error; drawer refreshes the list.
 
+**Security model**: history stores request snapshots — including auth
+credentials — in plaintext SQLite. This is consistent with ADR-011's
+plaintext request files (local-first); keychain-backed storage is out of
+scope for MVP, a deliberate, reviewed decision.
+
 ## 9. Testing
 
 **Rust** (`persistence/history.rs`, temp-dir DB, same pattern as `collection.rs` tests):
@@ -144,6 +149,6 @@ Regenerate `src/bindings.ts` after adding them.
 ## 10. Implementation order
 
 1. `persistence/history.rs` + rusqlite dep + Rust tests
-2. Capture in `send_request` / `send_soap` + new commands + regenerate bindings
+2. Capture in `send_request` / `send_soap` / `send_soap_raw` + new commands + regenerate bindings
 3. Drawer UI + stores + wrappers + Vitest
 4. stack.md update (rusqlite note) + product.md checkbox

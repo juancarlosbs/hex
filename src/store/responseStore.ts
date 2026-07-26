@@ -3,6 +3,8 @@ import { HttpResponse } from "../lib/response-types";
 import { OpenRequest, methodAllowsBody } from "../lib/request-types";
 import { api } from "../lib/api";
 import { useHistoryStore } from "./historyStore";
+import { useWorkspaceStore } from "./workspaceStore";
+import { useEnvStore } from "./envStore";
 
 export type ResponseEntry =
   | { state: "loading" }
@@ -36,23 +38,28 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
       responses: { ...s.responses, [id]: { state: "loading" } },
     }));
 
+    const workspaceId = useWorkspaceStore.getState().activeId;
+    const environmentId = useEnvStore.getState().activeId;
+
     let entry: ResponseEntry;
     try {
       const response = request.soap
         ? request.soap.xmlDraft !== null
-          ? await api.sendSoapRaw({
+          ? await api.sendSoapRaw(workspaceId, environmentId, {
               endpoint: request.soap.meta.endpoint,
               envelope: request.soap.xmlDraft,
               soapAction: request.soap.meta.soapAction,
               soapVersion: request.soap.meta.soapVersion,
               requestId: historyId,
             })
-          : await api.sendSoap({
+          : await api.sendSoap(workspaceId, environmentId, {
               ...request.soap.meta,
               value: request.soap.value,
               requestId: historyId,
             })
         : await api.sendRequest(
+            workspaceId,
+            environmentId,
             {
               method: request.method,
               url: request.url,
@@ -68,6 +75,11 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
       entry = { state: "done", response };
     } catch (e) {
       entry = { state: "error", error: String(e) };
+      if (entry.error.includes("environment not found")) {
+        // Stale id: the frontend's selection is out of sync with disk (e.g. deleted
+        // elsewhere). Refresh the env list so the selector drops it (spec row 3).
+        void useEnvStore.getState().load(workspaceId);
+      }
     }
 
     if (get().seq[id] !== mySeq) return; // cancelled or superseded

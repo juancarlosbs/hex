@@ -3,11 +3,13 @@ import { CentralPanel } from "./components/CentralPanel";
 import { Titlebar } from "./components/Titlebar";
 import { useWorkspaceStore, initWorkspaceStore } from "./store/workspaceStore";
 import { useCollectionStore } from "./store/collectionStore";
+import { useEnvStore } from "./store/envStore";
 
 function App() {
   const activeId = useWorkspaceStore((s) => s.activeId);
   const loadCollections = useCollectionStore((s) => s.load);
   const setActiveRequest = useCollectionStore((s) => s.setActiveRequest);
+  const loadEnvs = useEnvStore((s) => s.load);
 
   useEffect(() => {
     initWorkspaceStore();
@@ -16,7 +18,8 @@ function App() {
   useEffect(() => {
     setActiveRequest(null);
     loadCollections(activeId);
-  }, [activeId, loadCollections, setActiveRequest]);
+    loadEnvs(activeId);
+  }, [activeId, loadCollections, setActiveRequest, loadEnvs]);
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground">

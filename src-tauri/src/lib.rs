@@ -12,6 +12,7 @@ fn specta_builder() -> tauri_specta::Builder {
         commands::create_request,
         commands::rename_node,
         commands::delete_node,
+        commands::duplicate_node,
         commands::reorder_children,
         commands::get_request,
         commands::update_request,
@@ -26,6 +27,9 @@ fn specta_builder() -> tauri_specta::Builder {
         commands::list_history,
         commands::get_history_entry,
         commands::clear_history,
+        commands::list_environments,
+        commands::save_environment,
+        commands::delete_environment,
     ])
 }
 

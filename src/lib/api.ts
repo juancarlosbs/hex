@@ -2,6 +2,7 @@
 // Components never call invoke directly — and never import bindings directly either.
 import { commands, type Result } from "../bindings";
 import type {
+  Environment,
   FormValue,
   QName,
   RequestContent,
@@ -15,6 +16,8 @@ import type {
 export type {
   Attribute,
   CollectionNode,
+  Environment,
+  EnvironmentList,
   FormValue,
   HttpResponse,
   MaxOccurs,
@@ -59,6 +62,9 @@ export const api = {
   deleteNode: (workspaceId: string, path: string[]) =>
     unwrap(commands.deleteNode(workspaceId, path)),
 
+  duplicateNode: (workspaceId: string, path: string[]) =>
+    unwrap(commands.duplicateNode(workspaceId, path)),
+
   reorderChildren: (workspaceId: string, parentPath: string[], orderedIds: string[]) =>
     unwrap(commands.reorderChildren(workspaceId, parentPath, orderedIds)),
 
@@ -68,8 +74,12 @@ export const api = {
   updateRequest: (workspaceId: string, path: string[], content: RequestContent) =>
     unwrap(commands.updateRequest(workspaceId, path, content)),
 
-  sendRequest: (spec: SendSpec, requestId: string | null) =>
-    unwrap(commands.sendRequest(spec, requestId)),
+  sendRequest: (
+    workspaceId: string,
+    environmentId: string | null,
+    spec: SendSpec,
+    requestId: string | null,
+  ) => unwrap(commands.sendRequest(workspaceId, environmentId, spec, requestId)),
 
   importWsdl: (url: string) => unwrap(commands.importWsdl(url)),
 
@@ -79,17 +89,23 @@ export const api = {
   getOperationSchema: (wsdlUrl: string, inputElement: QName) =>
     unwrap(commands.getOperationSchema(wsdlUrl, inputElement)),
 
-  sendSoap: (spec: {
-    wsdlUrl: string;
-    inputElement: QName;
-    endpoint: string;
-    soapAction: string;
-    soapVersion: string;
-    value: FormValue;
-    requestId: string | null;
-  }) =>
+  sendSoap: (
+    workspaceId: string,
+    environmentId: string | null,
+    spec: {
+      wsdlUrl: string;
+      inputElement: QName;
+      endpoint: string;
+      soapAction: string;
+      soapVersion: string;
+      value: FormValue;
+      requestId: string | null;
+    },
+  ) =>
     unwrap(
       commands.sendSoap(
+        workspaceId,
+        environmentId,
         spec.wsdlUrl,
         spec.inputElement,
         spec.endpoint,
@@ -110,15 +126,21 @@ export const api = {
       commands.buildSoapEnvelope(spec.schema, spec.soapAction, spec.soapVersion, spec.value),
     ),
 
-  sendSoapRaw: (spec: {
-    endpoint: string;
-    envelope: string;
-    soapAction: string;
-    soapVersion: string;
-    requestId: string | null;
-  }) =>
+  sendSoapRaw: (
+    workspaceId: string,
+    environmentId: string | null,
+    spec: {
+      endpoint: string;
+      envelope: string;
+      soapAction: string;
+      soapVersion: string;
+      requestId: string | null;
+    },
+  ) =>
     unwrap(
       commands.sendSoapRaw(
+        workspaceId,
+        environmentId,
         spec.endpoint,
         spec.envelope,
         spec.soapAction,
@@ -133,4 +155,12 @@ export const api = {
   listHistory: (requestId: string) => unwrap(commands.listHistory(requestId)),
   getHistoryEntry: (entryId: number) => unwrap(commands.getHistoryEntry(entryId)),
   clearHistory: (requestId: string) => unwrap(commands.clearHistory(requestId)),
+
+  listEnvironments: (workspaceId: string) => unwrap(commands.listEnvironments(workspaceId)),
+
+  saveEnvironment: (workspaceId: string, environment: Environment) =>
+    unwrap(commands.saveEnvironment(workspaceId, environment)),
+
+  deleteEnvironment: (workspaceId: string, id: string) =>
+    unwrap(commands.deleteEnvironment(workspaceId, id)),
 };

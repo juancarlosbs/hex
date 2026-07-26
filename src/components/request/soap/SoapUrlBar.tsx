@@ -4,6 +4,8 @@ import { cn } from "../../../lib/utils";
 import { useRequestStore } from "../../../store/requestStore";
 import { useResponseStore } from "../../../store/responseStore";
 import { useHistoryStore } from "../../../store/historyStore";
+import { hasVarRefs, previewInterpolate } from "../../../lib/interpolate";
+import { useEnvStore } from "../../../store/envStore";
 
 interface SoapUrlBarProps {
   requestId: string;
@@ -20,6 +22,7 @@ export function SoapUrlBar({ requestId }: SoapUrlBarProps) {
   const cancel = useResponseStore((s) => s.cancel);
   const toggle = useHistoryStore((s) => s.toggle);
   const drawerOpen = useHistoryStore((s) => s.openFor === requestId);
+  const activeEnv = useEnvStore((s) => s.environments.find((e) => e.id === s.activeId) ?? null);
 
   const [versionOpen, setVersionOpen] = useState(false);
   const versionRef = useRef<HTMLDivElement>(null);
@@ -38,87 +41,98 @@ export function SoapUrlBar({ requestId }: SoapUrlBarProps) {
   const schemaLoading = req.soap.schema === null;
 
   return (
-    <div className="flex items-center gap-[10px] px-3 py-3 border-b border-border">
-      <div ref={versionRef} className="relative shrink-0">
-        <button
-          type="button"
-          onClick={() => setVersionOpen((o) => !o)}
-          className="flex items-center gap-[7px] px-[10px] py-[8px] rounded-[6px] border cursor-pointer"
-          style={{
-            background: "var(--color-soap-op-surface)",
-            borderColor: "var(--color-soap-op)",
-          }}
-        >
-          <Hexagon size={14} style={{ color: "var(--color-soap-op)" }} />
-          <span
-            className="text-[12px] font-semibold"
-            style={{ color: "var(--color-soap-op)", fontFamily: "var(--font-sans)" }}
+    <div className="flex flex-col border-b border-border">
+      <div className="flex items-center gap-[10px] px-3 py-3">
+        <div ref={versionRef} className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setVersionOpen((o) => !o)}
+            className="flex items-center gap-[7px] px-[10px] py-[8px] rounded-[6px] border cursor-pointer"
+            style={{
+              background: "var(--color-soap-op-surface)",
+              borderColor: "var(--color-soap-op)",
+            }}
           >
-            SOAP {soapVersion}
-          </span>
-          <ChevronDown size={13} style={{ color: "var(--color-soap-op)" }} />
-        </button>
+            <Hexagon size={14} style={{ color: "var(--color-soap-op)" }} />
+            <span
+              className="text-[12px] font-semibold"
+              style={{ color: "var(--color-soap-op)", fontFamily: "var(--font-sans)" }}
+            >
+              SOAP {soapVersion}
+            </span>
+            <ChevronDown size={13} style={{ color: "var(--color-soap-op)" }} />
+          </button>
 
-        {versionOpen && (
-          <div className="absolute left-0 top-[calc(100%+4px)] z-30 w-[140px] rounded-[6px] bg-card border border-border shadow-lg">
-            <ul className="flex flex-col gap-[1px] p-1">
-              {SOAP_VERSIONS.map((v) => (
-                <li key={v}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSoapVersion(requestId, v);
-                      setVersionOpen(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-[10px] py-[7px] rounded-[4px] cursor-pointer ${
-                      v === soapVersion ? "bg-secondary" : "hover:bg-secondary"
-                    }`}
-                  >
-                    <span className="text-[12px] font-semibold text-foreground" style={{ fontFamily: "var(--font-sans)" }}>
-                      SOAP {v}
-                    </span>
-                    {v === soapVersion && <Check size={12} className="text-foreground" />}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {versionOpen && (
+            <div className="absolute left-0 top-[calc(100%+4px)] z-30 w-[140px] rounded-[6px] bg-card border border-border shadow-lg">
+              <ul className="flex flex-col gap-[1px] p-1">
+                {SOAP_VERSIONS.map((v) => (
+                  <li key={v}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSoapVersion(requestId, v);
+                        setVersionOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-[10px] py-[7px] rounded-[4px] cursor-pointer ${
+                        v === soapVersion ? "bg-secondary" : "hover:bg-secondary"
+                      }`}
+                    >
+                      <span className="text-[12px] font-semibold text-foreground" style={{ fontFamily: "var(--font-sans)" }}>
+                        SOAP {v}
+                      </span>
+                      {v === soapVersion && <Check size={12} className="text-foreground" />}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        <input
+          value={endpoint}
+          onChange={(e) => setSoapEndpoint(requestId, e.target.value)}
+          placeholder="https://api.example.com/ws/Service"
+          className="flex-1 min-w-0 px-[11px] py-[9px] text-[13px] bg-card border border-border rounded-[6px] text-foreground placeholder:text-muted outline-none focus:border-ring"
+          style={{ fontFamily: "var(--font-mono)" }}
+        />
+
+        {req.path.length > 0 && (
+          <button
+            type="button"
+            onClick={() => toggle(requestId)}
+            className={cn(
+              "flex items-center justify-center px-3 py-[9px] rounded-[6px] border border-border cursor-pointer transition-colors shrink-0",
+              drawerOpen ? "bg-secondary text-foreground" : "bg-card text-muted hover:text-foreground",
+            )}
+            title="Send history"
+          >
+            <History size={15} />
+          </button>
         )}
-      </div>
 
-      <input
-        value={endpoint}
-        onChange={(e) => setSoapEndpoint(requestId, e.target.value)}
-        placeholder="https://api.example.com/ws/Service"
-        className="flex-1 min-w-0 px-[11px] py-[9px] text-[13px] bg-card border border-border rounded-[6px] text-foreground placeholder:text-muted outline-none focus:border-ring"
-        style={{ fontFamily: "var(--font-mono)" }}
-      />
-
-      {req.path.length > 0 && (
         <button
           type="button"
-          onClick={() => toggle(requestId)}
-          className={cn(
-            "flex items-center justify-center px-3 py-[9px] rounded-[6px] border border-border cursor-pointer transition-colors shrink-0",
-            drawerOpen ? "bg-secondary text-foreground" : "bg-card text-muted hover:text-foreground",
-          )}
-          title="Send history"
+          disabled={!loading && schemaLoading}
+          onClick={() => (loading ? cancel(requestId) : send(req))}
+          className="flex items-center justify-center gap-2 px-[18px] py-[9px] rounded-[6px] bg-primary text-primary-foreground text-[13px] font-semibold cursor-pointer hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+          style={{ fontFamily: "var(--font-sans)" }}
+          title={loading ? "Cancel" : schemaLoading ? "Loading schema…" : "Send (⌘↵)"}
         >
-          <History size={15} />
+          {loading ? "Cancel" : "Send"}
+          {loading ? <X size={14} /> : <CornerDownLeft size={14} />}
         </button>
+      </div>
+      {activeEnv && hasVarRefs(endpoint) && (
+        <div
+          className="px-3 pb-2 text-[11px] text-muted truncate"
+          style={{ fontFamily: "var(--font-mono)" }}
+          title="Preview — resolved again in Rust at send time"
+        >
+          {previewInterpolate(endpoint, (activeEnv.variables ?? {}) as Record<string, string>)}
+        </div>
       )}
-
-      <button
-        type="button"
-        disabled={!loading && schemaLoading}
-        onClick={() => (loading ? cancel(requestId) : send(req))}
-        className="flex items-center justify-center gap-2 px-[18px] py-[9px] rounded-[6px] bg-primary text-primary-foreground text-[13px] font-semibold cursor-pointer hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-        style={{ fontFamily: "var(--font-sans)" }}
-        title={loading ? "Cancel" : schemaLoading ? "Loading schema…" : "Send (⌘↵)"}
-      >
-        {loading ? "Cancel" : "Send"}
-        {loading ? <X size={14} /> : <CornerDownLeft size={14} />}
-      </button>
     </div>
   );
 }

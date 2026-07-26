@@ -418,6 +418,7 @@ function SortableRequestItem({
   ];
 
   const isSoap = node.kind === "soap";
+  const isOrphan = node.kind === "soap" && node.orphan === true;
 
   return (
     <div
@@ -455,6 +456,14 @@ function SortableRequestItem({
       ) : (
         <span className={cn("text-[12px] font-mono", isActive ? "text-foreground" : "text-sidebar-muted")}>
           {node.name}
+        </span>
+      )}
+      {isOrphan && (
+        <span
+          className="ml-auto shrink-0 text-[9px] uppercase tracking-[0.5px] text-sidebar-muted border border-border rounded-[3px] px-1"
+          title="Operation no longer exists in the WSDL"
+        >
+          orphan
         </span>
       )}
       {menu && (

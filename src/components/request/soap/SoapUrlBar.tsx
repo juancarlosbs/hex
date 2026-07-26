@@ -94,17 +94,19 @@ export function SoapUrlBar({ requestId }: SoapUrlBarProps) {
         style={{ fontFamily: "var(--font-mono)" }}
       />
 
-      <button
-        type="button"
-        onClick={() => toggle(requestId)}
-        className={cn(
-          "flex items-center justify-center px-3 py-[9px] rounded-[6px] border border-border cursor-pointer transition-colors shrink-0",
-          drawerOpen ? "bg-secondary text-foreground" : "bg-card text-muted hover:text-foreground",
-        )}
-        title="Send history"
-      >
-        <History size={15} />
-      </button>
+      {req.path.length > 0 && (
+        <button
+          type="button"
+          onClick={() => toggle(requestId)}
+          className={cn(
+            "flex items-center justify-center px-3 py-[9px] rounded-[6px] border border-border cursor-pointer transition-colors shrink-0",
+            drawerOpen ? "bg-secondary text-foreground" : "bg-card text-muted hover:text-foreground",
+          )}
+          title="Send history"
+        >
+          <History size={15} />
+        </button>
+      )}
 
       <button
         type="button"

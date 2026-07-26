@@ -6,6 +6,8 @@ fn data_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
 }
 
 /// Best-effort history append — a history failure must never fail the send.
+/// The SQLite write runs off the send path (spawn_blocking, fire-and-forget)
+/// so it can never add latency to the response the user is waiting on.
 fn record_history(
     app: &tauri::AppHandle,
     request_id: Option<String>,
@@ -14,11 +16,14 @@ fn record_history(
 ) {
     let Some(request_id) = request_id else { return };
     let Ok(dir) = data_dir(app) else { return };
-    if let Err(e) =
-        crate::persistence::history::append(&dir.join("history.db"), &request_id, spec, result)
-    {
-        eprintln!("history: append failed for {request_id}: {e:#}");
-    }
+    let result = result.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(e) =
+            crate::persistence::history::append(&dir.join("history.db"), &request_id, spec, &result)
+        {
+            eprintln!("history: append failed for {request_id}: {e:#}");
+        }
+    });
 }
 
 #[tauri::command]

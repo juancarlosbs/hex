@@ -52,6 +52,13 @@ const ENTRY: HistoryEntry = {
   error: null,
 };
 
+const FAILED_ENTRY: HistoryEntry = {
+  ...ENTRY,
+  id: 2,
+  response: null,
+  error: "dns failure",
+};
+
 beforeEach(() => {
   useHistoryStore.setState({ openFor: null, entries: [], loading: false, viewing: {} });
   vi.clearAllMocks();
@@ -77,7 +84,13 @@ describe("view / backToLive", () => {
   it("loads the entry response for viewing", async () => {
     vi.mocked(api.getHistoryEntry).mockResolvedValue(ENTRY);
     await useHistoryStore.getState().view("r1", 1);
-    expect(useHistoryStore.getState().viewing.r1).toEqual(RESPONSE);
+    expect(useHistoryStore.getState().viewing.r1).toEqual({ response: RESPONSE, error: null });
+  });
+
+  it("loads the entry error for viewing when the send failed", async () => {
+    vi.mocked(api.getHistoryEntry).mockResolvedValue(FAILED_ENTRY);
+    await useHistoryStore.getState().view("r1", 2);
+    expect(useHistoryStore.getState().viewing.r1).toEqual({ response: null, error: "dns failure" });
   });
 
   it("backToLive drops the viewed response", async () => {

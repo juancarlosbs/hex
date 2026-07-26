@@ -187,7 +187,12 @@ pub fn get(db: &Path, entry_id: i64) -> anyhow::Result<HistoryEntry> {
             params![entry_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
-        .map_err(|_| anyhow::anyhow!("history entry {entry_id} not found"))?;
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                anyhow::anyhow!("history entry {entry_id} not found")
+            }
+            e => anyhow::Error::new(e).context(format!("failed to load history entry {entry_id}")),
+        })?;
     Ok(HistoryEntry {
         id: entry_id,
         executed_at_ms,

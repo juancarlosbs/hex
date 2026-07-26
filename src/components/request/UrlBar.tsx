@@ -34,17 +34,19 @@ export function UrlBar({ requestId }: UrlBarProps) {
         style={{ fontFamily: "var(--font-mono)" }}
       />
 
-      <button
-        type="button"
-        onClick={() => toggle(requestId)}
-        className={cn(
-          "flex items-center justify-center px-3 py-[10px] rounded-[6px] border border-border cursor-pointer transition-colors",
-          drawerOpen ? "bg-secondary text-foreground" : "bg-background text-muted hover:text-foreground",
-        )}
-        title="Send history"
-      >
-        <History size={15} />
-      </button>
+      {req.path.length > 0 && (
+        <button
+          type="button"
+          onClick={() => toggle(requestId)}
+          className={cn(
+            "flex items-center justify-center px-3 py-[10px] rounded-[6px] border border-border cursor-pointer transition-colors",
+            drawerOpen ? "bg-secondary text-foreground" : "bg-background text-muted hover:text-foreground",
+          )}
+          title="Send history"
+        >
+          <History size={15} />
+        </button>
+      )}
 
       <button
         type="button"

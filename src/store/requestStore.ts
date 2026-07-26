@@ -11,7 +11,7 @@ import {
   RestBody,
   makeEmptyRequest,
 } from "../lib/request-types";
-import { api, FormValue, HistorySpec, RequestFileData } from "../lib/api";
+import { api, FormValue, HistorySpec, RequestFileData, WsdlQName } from "../lib/api";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useCollectionStore } from "./collectionStore";
 import { useResponseStore } from "./responseStore";
@@ -143,7 +143,7 @@ export const useRequestStore = create<RequestState>((set, get) => ({
       return { openRequests: rest, order, activeId };
     });
     useResponseStore.getState().clear(id);
-    useHistoryStore.getState().close();
+    if (useHistoryStore.getState().openFor === id) useHistoryStore.getState().close();
     useHistoryStore.getState().backToLive(id);
   },
 
@@ -315,6 +315,9 @@ export const useRequestStore = create<RequestState>((set, get) => ({
   },
 
   applyHistorySpec(id, spec) {
+    // Set outside `set()` when the soap branch below finds the restored operation
+    // differs from the current one — fetched after the state update, mirroring openRequest.
+    let refetchSchema: { wsdlUrl: string; inputElement: WsdlQName } | null = null;
     set((s) => {
       const req = s.openRequests[id];
       if (!req) return s;
@@ -332,18 +335,27 @@ export const useRequestStore = create<RequestState>((set, get) => ({
           dirty: true,
         };
       } else if (spec.kind === "soap" && req.soap) {
+        const meta = {
+          wsdlUrl: spec.wsdlUrl,
+          inputElement: spec.inputElement,
+          endpoint: spec.endpoint,
+          soapAction: spec.soapAction,
+          soapVersion: spec.soapVersion,
+        };
+        const sameOperation =
+          req.soap.meta.wsdlUrl === meta.wsdlUrl &&
+          req.soap.meta.inputElement.namespace === meta.inputElement.namespace &&
+          req.soap.meta.inputElement.local === meta.inputElement.local;
+        if (!sameOperation) {
+          refetchSchema = { wsdlUrl: meta.wsdlUrl, inputElement: meta.inputElement };
+        }
         next = {
           ...req,
           dirty: true,
           soap: {
             ...req.soap,
-            meta: {
-              wsdlUrl: spec.wsdlUrl,
-              inputElement: spec.inputElement,
-              endpoint: spec.endpoint,
-              soapAction: spec.soapAction,
-              soapVersion: spec.soapVersion,
-            },
+            meta,
+            schema: sameOperation ? req.soap.schema : null,
             value: spec.value,
             xmlDraft: null,
           },
@@ -361,6 +373,23 @@ export const useRequestStore = create<RequestState>((set, get) => ({
       }
       return { openRequests: { ...s.openRequests, [id]: next } };
     });
+
+    if (refetchSchema) {
+      const { wsdlUrl, inputElement } = refetchSchema;
+      api
+        .getOperationSchema(wsdlUrl, inputElement)
+        .then((schema) => {
+          set((s) => {
+            const r = s.openRequests[id];
+            // re-check: the request may have been closed/superseded while the fetch was in flight
+            if (!r || !r.soap) return s;
+            return { openRequests: patch(s.openRequests, id, { soap: { ...r.soap, schema } }) };
+          });
+        })
+        .catch((e) => {
+          console.error("getOperationSchema failed:", e);
+        });
+    }
   },
 }));
 

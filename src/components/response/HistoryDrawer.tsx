@@ -81,9 +81,18 @@ export function HistoryDrawer() {
         {entries.map((e) => (
           <div
             key={e.id}
+            role="button"
+            tabIndex={0}
             onClick={() => {
               setPending(null);
               view(openFor, e.id);
+            }}
+            onKeyDown={(ev) => {
+              if (ev.key === "Enter" || ev.key === " ") {
+                if (ev.key === " ") ev.preventDefault();
+                setPending(null);
+                view(openFor, e.id);
+              }
             }}
             className="group flex items-center gap-2 px-3 py-2 border-b border-border/50 cursor-pointer hover:bg-secondary/60"
           >
@@ -120,7 +129,7 @@ export function HistoryDrawer() {
                   ev.stopPropagation();
                   handleRestoreClick(e.id);
                 }}
-                className="opacity-0 group-hover:opacity-100 text-muted hover:text-foreground cursor-pointer"
+                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-muted hover:text-foreground cursor-pointer"
                 title="Restore this request into the editor"
               >
                 <RotateCcw size={13} />

@@ -7,8 +7,9 @@ interface HistoryState {
   openFor: string | null;
   entries: HistoryEntrySummary[];
   loading: boolean;
-  /** Per request: a saved response being viewed instead of the live one. */
-  viewing: Record<string, HttpResponse>;
+  /** Per request: a saved entry being viewed instead of the live response.
+   * `response` and `error` mirror the entry — exactly one is set. */
+  viewing: Record<string, { response: HttpResponse | null; error: string | null }>;
 
   toggle(requestId: string): Promise<void>;
   close(): void;
@@ -57,9 +58,12 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
       await get().refresh(requestId); // stale entry — drop it from the list
       return;
     }
-    if (entry.response) {
-      set((s) => ({ viewing: { ...s.viewing, [requestId]: entry.response! } }));
-    }
+    set((s) => ({
+      viewing: {
+        ...s.viewing,
+        [requestId]: { response: entry.response ?? null, error: entry.error ?? null },
+      },
+    }));
   },
 
   backToLive(requestId) {
@@ -71,6 +75,7 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
 
   async clear(requestId) {
     await api.clearHistory(requestId);
+    if (get().openFor !== requestId) return;
     set({ entries: [] });
   },
 }));

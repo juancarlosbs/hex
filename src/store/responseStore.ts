@@ -72,6 +72,9 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
 
     if (get().seq[id] !== mySeq) return; // cancelled or superseded
     set((s) => ({ responses: { ...s.responses, [id]: entry } }));
+    if (historyId != null && useHistoryStore.getState().openFor === id) {
+      void useHistoryStore.getState().refresh(id);
+    }
   },
 
   cancel(id) {

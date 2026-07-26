@@ -6,6 +6,7 @@ vi.mock("../lib/api", () => ({
     updateRequest: vi.fn().mockResolvedValue(undefined),
     sendRequest: vi.fn(),
     parseSoapEnvelope: vi.fn(),
+    getOperationSchema: vi.fn().mockResolvedValue(undefined),
   },
 }));
 vi.mock("./workspaceStore", () => ({
@@ -253,6 +254,41 @@ describe("applyHistorySpec", () => {
     expect(req.soap?.value).toEqual({ sequence: [] });
     expect(req.soap?.xmlDraft).toBeNull();
     expect(req.dirty).toBe(true);
+  });
+
+  it("restoring a different operation (different inputElement) nulls the schema and refetches it", () => {
+    seedSoap();
+    useRequestStore.getState().applyHistorySpec("s1", {
+      kind: "soap",
+      wsdlUrl: "https://old.dev?wsdl",
+      inputElement: { namespace: "", local: "OtherOp" },
+      endpoint: "https://old.dev/svc",
+      soapAction: "urn:other",
+      soapVersion: "1.1",
+      value: { sequence: [] },
+    });
+    const req = useRequestStore.getState().openRequests.s1;
+    expect(req.soap?.schema).toBeNull();
+    expect(api.getOperationSchema).toHaveBeenCalledWith("https://old.dev?wsdl", {
+      namespace: "",
+      local: "OtherOp",
+    });
+  });
+
+  it("restoring the same operation keeps the existing schema and does not refetch", () => {
+    seedSoap();
+    useRequestStore.getState().applyHistorySpec("s1", {
+      kind: "soap",
+      wsdlUrl: "https://old.dev?wsdl",
+      inputElement: { namespace: "", local: "Op" },
+      endpoint: "https://old.dev/svc",
+      soapAction: "urn:old",
+      soapVersion: "1.1",
+      value: { sequence: [] },
+    });
+    const req = useRequestStore.getState().openRequests.s1;
+    expect(req.soap?.schema).toBe(leafSchema);
+    expect(api.getOperationSchema).not.toHaveBeenCalled();
   });
 
   it("restores a raw SOAP envelope as the xml draft", () => {

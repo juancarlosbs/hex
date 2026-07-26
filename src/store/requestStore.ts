@@ -8,9 +8,10 @@ import {
   KeyValue,
   OpenRequest,
   RequestTab,
+  RestBody,
   makeEmptyRequest,
 } from "../lib/request-types";
-import { api, FormValue, RequestFileData } from "../lib/api";
+import { api, FormValue, HistorySpec, RequestFileData } from "../lib/api";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useCollectionStore } from "./collectionStore";
 import { useResponseStore } from "./responseStore";
@@ -52,6 +53,8 @@ interface RequestState {
    * source again), or an error message when the XML doesn't conform (draft kept,
    * request stays in raw mode). */
   commitSoapXml(id: string): Promise<string | null>;
+
+  applyHistorySpec(id: string, spec: HistorySpec): void;
 }
 
 const uid = () => crypto.randomUUID();
@@ -302,6 +305,55 @@ export const useRequestStore = create<RequestState>((set, get) => ({
           soap: { ...r.soap, meta: { ...r.soap.meta, soapVersion } },
         }),
       };
+    });
+  },
+
+  applyHistorySpec(id, spec) {
+    set((s) => {
+      const req = s.openRequests[id];
+      if (!req) return s;
+      let next = req;
+      if (spec.kind === "rest") {
+        const r = spec.spec;
+        next = {
+          ...req,
+          method: r.method as HttpMethod,
+          url: r.url,
+          params: r.params as KeyValue[],
+          headers: r.headers as KeyValue[],
+          body: r.body as RestBody,
+          auth: r.auth as AuthConfig,
+          dirty: true,
+        };
+      } else if (spec.kind === "soap" && req.soap) {
+        next = {
+          ...req,
+          dirty: true,
+          soap: {
+            ...req.soap,
+            meta: {
+              wsdlUrl: spec.wsdlUrl,
+              inputElement: spec.inputElement,
+              endpoint: spec.endpoint,
+              soapAction: spec.soapAction,
+              soapVersion: spec.soapVersion,
+            },
+            value: spec.value,
+            xmlDraft: null,
+          },
+        };
+      } else if (spec.kind === "soapRaw" && req.soap) {
+        next = {
+          ...req,
+          dirty: true,
+          soap: {
+            ...req.soap,
+            meta: { ...req.soap.meta, endpoint: spec.endpoint, soapAction: spec.soapAction, soapVersion: spec.soapVersion },
+            xmlDraft: spec.envelope,
+          },
+        };
+      }
+      return { openRequests: { ...s.openRequests, [id]: next } };
     });
   },
 }));

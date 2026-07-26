@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { HttpResponse } from "../lib/response-types";
 import { OpenRequest, methodAllowsBody } from "../lib/request-types";
 import { api } from "../lib/api";
+import { useHistoryStore } from "./historyStore";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useEnvStore } from "./envStore";
 
@@ -27,7 +28,11 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
 
   async send(request) {
     const id = request.id;
+    // ponytail: path.length === 0 means a scratch request that was never
+    // saved to a collection — no id to attach history to.
+    const historyId = request.path.length > 0 ? request.id : null;
     const mySeq = (get().seq[id] ?? 0) + 1;
+    useHistoryStore.getState().backToLive(id); // a new send outranks a history view
     set((s) => ({
       seq: { ...s.seq, [id]: mySeq },
       responses: { ...s.responses, [id]: { state: "loading" } },
@@ -45,21 +50,28 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
               envelope: request.soap.xmlDraft,
               soapAction: request.soap.meta.soapAction,
               soapVersion: request.soap.meta.soapVersion,
+              requestId: historyId,
             })
           : await api.sendSoap(workspaceId, environmentId, {
               ...request.soap.meta,
               value: request.soap.value,
+              requestId: historyId,
             })
-        : await api.sendRequest(workspaceId, environmentId, {
-            method: request.method,
-            url: request.url,
-            params: request.params,
-            headers: request.headers,
-            body: methodAllowsBody(request.method)
-              ? request.body
-              : { mode: "json", json: "", form: [] },
-            auth: request.auth,
-          });
+        : await api.sendRequest(
+            workspaceId,
+            environmentId,
+            {
+              method: request.method,
+              url: request.url,
+              params: request.params,
+              headers: request.headers,
+              body: methodAllowsBody(request.method)
+                ? request.body
+                : { mode: "json", json: "", form: [] },
+              auth: request.auth,
+            },
+            historyId,
+          );
       entry = { state: "done", response };
     } catch (e) {
       entry = { state: "error", error: String(e) };
@@ -72,6 +84,9 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
 
     if (get().seq[id] !== mySeq) return; // cancelled or superseded
     set((s) => ({ responses: { ...s.responses, [id]: entry } }));
+    if (historyId != null && useHistoryStore.getState().openFor === id) {
+      void useHistoryStore.getState().refresh(id);
+    }
   },
 
   cancel(id) {

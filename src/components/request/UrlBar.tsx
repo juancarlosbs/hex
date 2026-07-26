@@ -1,8 +1,10 @@
 // src/components/request/UrlBar.tsx
-import { CornerDownLeft, X } from "lucide-react";
+import { CornerDownLeft, History, X } from "lucide-react";
 import { MethodDropdown } from "./MethodDropdown";
+import { cn } from "../../lib/utils";
 import { useRequestStore } from "../../store/requestStore";
 import { useResponseStore } from "../../store/responseStore";
+import { useHistoryStore } from "../../store/historyStore";
 import { hasVarRefs, previewInterpolate } from "../../lib/interpolate";
 import { useEnvStore } from "../../store/envStore";
 
@@ -17,6 +19,8 @@ export function UrlBar({ requestId }: UrlBarProps) {
   const loading = useResponseStore((s) => s.responses[requestId]?.state === "loading");
   const send = useResponseStore((s) => s.send);
   const cancel = useResponseStore((s) => s.cancel);
+  const toggle = useHistoryStore((s) => s.toggle);
+  const drawerOpen = useHistoryStore((s) => s.openFor === requestId);
   const activeEnv = useEnvStore((s) => s.environments.find((e) => e.id === s.activeId) ?? null);
 
   if (!req) return null;
@@ -33,6 +37,20 @@ export function UrlBar({ requestId }: UrlBarProps) {
           className="flex-1 min-w-0 px-3 py-[9px] text-[13px] bg-background border border-border rounded-[6px] text-foreground placeholder:text-muted outline-none focus:border-ring"
           style={{ fontFamily: "var(--font-mono)" }}
         />
+
+        {req.path.length > 0 && (
+          <button
+            type="button"
+            onClick={() => toggle(requestId)}
+            className={cn(
+              "flex items-center justify-center px-3 py-[10px] rounded-[6px] border border-border cursor-pointer transition-colors",
+              drawerOpen ? "bg-secondary text-foreground" : "bg-background text-muted hover:text-foreground",
+            )}
+            title="Send history"
+          >
+            <History size={15} />
+          </button>
+        )}
 
         <button
           type="button"

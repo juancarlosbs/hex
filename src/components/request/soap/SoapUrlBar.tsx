@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, CornerDownLeft, Hexagon, X } from "lucide-react";
+import { Check, ChevronDown, CornerDownLeft, Hexagon, History, X } from "lucide-react";
+import { cn } from "../../../lib/utils";
 import { useRequestStore } from "../../../store/requestStore";
 import { useResponseStore } from "../../../store/responseStore";
+import { useHistoryStore } from "../../../store/historyStore";
 import { hasVarRefs, previewInterpolate } from "../../../lib/interpolate";
 import { useEnvStore } from "../../../store/envStore";
 
@@ -18,6 +20,8 @@ export function SoapUrlBar({ requestId }: SoapUrlBarProps) {
   const loading = useResponseStore((s) => s.responses[requestId]?.state === "loading");
   const send = useResponseStore((s) => s.send);
   const cancel = useResponseStore((s) => s.cancel);
+  const toggle = useHistoryStore((s) => s.toggle);
+  const drawerOpen = useHistoryStore((s) => s.openFor === requestId);
   const activeEnv = useEnvStore((s) => s.environments.find((e) => e.id === s.activeId) ?? null);
 
   const [versionOpen, setVersionOpen] = useState(false);
@@ -93,6 +97,20 @@ export function SoapUrlBar({ requestId }: SoapUrlBarProps) {
           className="flex-1 min-w-0 px-[11px] py-[9px] text-[13px] bg-card border border-border rounded-[6px] text-foreground placeholder:text-muted outline-none focus:border-ring"
           style={{ fontFamily: "var(--font-mono)" }}
         />
+
+        {req.path.length > 0 && (
+          <button
+            type="button"
+            onClick={() => toggle(requestId)}
+            className={cn(
+              "flex items-center justify-center px-3 py-[9px] rounded-[6px] border border-border cursor-pointer transition-colors shrink-0",
+              drawerOpen ? "bg-secondary text-foreground" : "bg-card text-muted hover:text-foreground",
+            )}
+            title="Send history"
+          >
+            <History size={15} />
+          </button>
+        )}
 
         <button
           type="button"

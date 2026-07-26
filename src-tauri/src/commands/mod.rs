@@ -5,6 +5,27 @@ fn data_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     app.path().app_data_dir().map_err(|e| e.to_string())
 }
 
+/// Best-effort history append — a history failure must never fail the send.
+/// The SQLite write runs off the send path (spawn_blocking, fire-and-forget)
+/// so it can never add latency to the response the user is waiting on.
+fn record_history(
+    app: &tauri::AppHandle,
+    request_id: Option<String>,
+    spec: crate::persistence::history::HistorySpec,
+    result: &Result<crate::engine::HttpResponse, String>,
+) {
+    let Some(request_id) = request_id else { return };
+    let Ok(dir) = data_dir(app) else { return };
+    let result = result.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(e) =
+            crate::persistence::history::append(&dir.join("history.db"), &request_id, spec, &result)
+        {
+            eprintln!("history: append failed for {request_id}: {e:#}");
+        }
+    });
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn list_collections(
@@ -167,10 +188,16 @@ pub async fn send_request(
     workspace_id: String,
     environment_id: Option<String>,
     mut spec: crate::engine::SendSpec,
+    request_id: Option<String>,
 ) -> Result<crate::engine::HttpResponse, String> {
+    // Snapshot before interpolation: history stores the raw {{var}} form so
+    // Restore round-trips the editor draft and env secrets stay out of the DB.
+    let snapshot = crate::persistence::history::HistorySpec::Rest { spec: spec.clone() };
     let (environment, no_env) = resolve_environment(&app, &workspace_id, environment_id)?;
     crate::engine::apply_env(&mut spec, &environment).map_err(|e| with_env_hint(e, no_env))?;
-    crate::engine::send(spec).await
+    let result = crate::engine::send(spec).await;
+    record_history(&app, request_id, snapshot, &result);
+    result
 }
 
 use crate::domain::wsdl::{OperationRef, SoapVersion};
@@ -310,7 +337,18 @@ pub async fn send_soap(
     soap_action: String,
     soap_version: String,
     value: FormValue,
+    request_id: Option<String>,
 ) -> Result<engine::HttpResponse, String> {
+    // Snapshot before interpolation: history stores the raw {{var}} form so
+    // Restore round-trips the editor draft and env secrets stay out of the DB.
+    let snapshot = crate::persistence::history::HistorySpec::Soap {
+        wsdl_url: wsdl_url.clone(),
+        input_element: input_element.clone(),
+        endpoint: endpoint.clone(),
+        soap_action: soap_action.clone(),
+        soap_version: soap_version.clone(),
+        value: value.clone(),
+    };
     let (environment, no_env) = resolve_environment(&app, &workspace_id, environment_id)?;
 
     // Interpolate first: none of these need the schema, so an unknown {{var}}
@@ -343,7 +381,9 @@ pub async fn send_soap(
         engine::serialize::build_envelope(&schema, &value, &soap_version, &soap_action)
             .map_err(|e| e.to_string())?;
 
-    engine::send_soap_envelope(&endpoint, envelope, meta).await
+    let result = engine::send_soap_envelope(&endpoint, envelope, meta).await;
+    record_history(&app, request_id, snapshot, &result);
+    result
 }
 
 /// Serialize the SOAP envelope from the current form value without sending it —
@@ -374,6 +414,7 @@ pub fn parse_envelope(envelope: String, schema: SchemaNode) -> Result<FormValue,
 /// serializer. Transport metadata still follows the selected SOAP version.
 #[tauri::command]
 #[specta::specta]
+#[allow(clippy::too_many_arguments)]
 pub async fn send_soap_raw(
     app: tauri::AppHandle,
     workspace_id: String,
@@ -382,7 +423,16 @@ pub async fn send_soap_raw(
     envelope: String,
     soap_action: String,
     soap_version: String,
+    request_id: Option<String>,
 ) -> Result<engine::HttpResponse, String> {
+    // Snapshot before interpolation: history stores the raw {{var}} form so
+    // Restore round-trips the editor draft and env secrets stay out of the DB.
+    let snapshot = crate::persistence::history::HistorySpec::SoapRaw {
+        endpoint: endpoint.clone(),
+        envelope: envelope.clone(),
+        soap_action: soap_action.clone(),
+        soap_version: soap_version.clone(),
+    };
     let (environment, no_env) = resolve_environment(&app, &workspace_id, environment_id)?;
     let endpoint = crate::domain::env::interpolate(&endpoint, &environment)
         .map_err(|e| with_env_hint(format!("{e} in endpoint"), no_env))?;
@@ -392,7 +442,38 @@ pub async fn send_soap_raw(
         .map_err(|e| with_env_hint(format!("{e} in envelope"), no_env))?;
 
     let meta = engine::serialize::soap_meta(&soap_version, &soap_action);
-    engine::send_soap_envelope(&endpoint, envelope, meta).await
+    let result = engine::send_soap_envelope(&endpoint, envelope, meta).await;
+    record_history(&app, request_id, snapshot, &result);
+    result
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn list_history(
+    app: tauri::AppHandle,
+    request_id: String,
+) -> Result<Vec<crate::persistence::history::HistoryEntrySummary>, String> {
+    let dir = data_dir(&app)?;
+    crate::persistence::history::list(&dir.join("history.db"), &request_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_history_entry(
+    app: tauri::AppHandle,
+    entry_id: i64,
+) -> Result<crate::persistence::history::HistoryEntry, String> {
+    let dir = data_dir(&app)?;
+    crate::persistence::history::get(&dir.join("history.db"), entry_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn clear_history(app: tauri::AppHandle, request_id: String) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    crate::persistence::history::clear(&dir.join("history.db"), &request_id)
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

@@ -256,8 +256,10 @@ describe("applyHistorySpec", () => {
     expect(req.dirty).toBe(true);
   });
 
-  it("restoring a different operation (different inputElement) nulls the schema and refetches it", () => {
+  it("restoring a different operation (different inputElement) nulls the schema and refetches it", async () => {
     seedSoap();
+    const refetchedSchema = { ...leafSchema, name: "OtherOp" };
+    vi.mocked(api.getOperationSchema).mockResolvedValue(refetchedSchema as never);
     useRequestStore.getState().applyHistorySpec("s1", {
       kind: "soap",
       wsdlUrl: "https://old.dev?wsdl",
@@ -267,11 +269,16 @@ describe("applyHistorySpec", () => {
       soapVersion: "1.1",
       value: { sequence: [] },
     });
-    const req = useRequestStore.getState().openRequests.s1;
-    expect(req.soap?.schema).toBeNull();
+    expect(useRequestStore.getState().openRequests.s1.soap?.schema).toBeNull();
     expect(api.getOperationSchema).toHaveBeenCalledWith("https://old.dev?wsdl", {
       namespace: "",
       local: "OtherOp",
+    });
+    await vi.waitFor(() => {
+      const req = useRequestStore.getState().openRequests.s1;
+      expect(req.soap?.schema).toEqual(refetchedSchema);
+      // the restored value must survive the schema refetch
+      expect(req.soap?.value).toEqual({ sequence: [] });
     });
   });
 

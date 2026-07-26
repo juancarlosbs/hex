@@ -40,7 +40,14 @@ pub fn list_environments(data_dir: &Path, workspace_id: &str) -> anyhow::Result<
         }
     };
     for entry in entries {
-        let path = entry?.path();
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                out.errors.push(format!("environments: {e}"));
+                continue;
+            }
+        };
+        let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }

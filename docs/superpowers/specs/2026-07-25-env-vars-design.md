@@ -17,9 +17,9 @@ Scope: the 🟢⭐ MVP items "Environment variables `{{var}}` interpolated" and 
 ### Rust
 
 - `domain/env.rs` (pure, per docs/domain-model.md §6):
-  `Environment { id, name, vars: BTreeMap<String, String> }` and
+  `Environment { id, name, variables: BTreeMap<String, String> }` and
   `interpolate(template: &str, env: &Environment) -> Result<String, DomainError>`.
-  No I/O. `DomainError::UnknownVar` already exists in the domain error enum.
+  No I/O. `DomainError::UnknownVar` is added by this feature.
 - `persistence/environment.rs`: `list / save / delete` of per-environment TOML files, reusing the existing id validation (path traversal guard). The active environment id is per-workspace UI state kept in the frontend plugin-store (`activeEnv:<workspaceId>` in `hex.json`) — workspace metadata itself lives there today, not in Rust; the authoritative environment *content* always comes from disk at send time.
 - `commands/`: thin `list_environments`, `save_environment`, `delete_environment`. Existing `send_*` commands gain `environment_id: Option<String>`; with an id, the command loads the TOML and interpolates all outgoing fields before building `PreparedRequest`. Unknown id → send error, no network call.
 - `src/bindings.ts` regenerated with tauri-specta (`cargo test export_bindings`); never hand-edited.
@@ -41,7 +41,7 @@ frontend → send_*(request, environment_id?)
 
 ## Interpolation semantics
 
-- `{{name}}` resolves from the active environment's `vars`; whitespace inside braces is trimmed (`{{ host }}` ≡ `{{host}}`).
+- `{{name}}` resolves from the active environment's `variables`; whitespace inside braces is trimmed (`{{ host }}` ≡ `{{host}}`).
 - Unknown variable → `DomainError::UnknownVar(name)`; the send fails before any network activity.
 - `{{var}}` present but no active environment → same `UnknownVar` failure; the UI message suggests selecting an environment.
 - Unclosed `{{` and empty `{{}}` are not valid references and pass through as literals.

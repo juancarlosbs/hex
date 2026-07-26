@@ -153,11 +153,15 @@ pub fn apply_env(
         kv.key = interp(&kv.key, &field)?;
         kv.value = interp(&kv.value, &field)?;
     }
-    spec.body.json = interp(&spec.body.json, "body")?;
-    for kv in spec.body.form.iter_mut().filter(|kv| kv.enabled) {
-        let field = format!("form field \"{}\"", kv.key);
-        kv.key = interp(&kv.key, &field)?;
-        kv.value = interp(&kv.value, &field)?;
+    if spec.body.mode == "json" {
+        spec.body.json = interp(&spec.body.json, "body")?;
+    }
+    if spec.body.mode == "form-urlencoded" {
+        for kv in spec.body.form.iter_mut().filter(|kv| kv.enabled) {
+            let field = format!("form field \"{}\"", kv.key);
+            kv.key = interp(&kv.key, &field)?;
+            kv.value = interp(&kv.value, &field)?;
+        }
     }
     spec.auth = match std::mem::replace(&mut spec.auth, AuthData::None) {
         AuthData::None => AuthData::None,
@@ -313,6 +317,31 @@ mod tests {
         apply_env(&mut s, &e).unwrap();
         assert_eq!(s.body.form[0].value, "ada");
         assert!(matches!(&s.auth, AuthData::Bearer { token } if token == "t1"));
+    }
+
+    #[test]
+    fn apply_env_leaves_inactive_json_body_untouched_in_form_mode() {
+        // body.mode is form-urlencoded, so a stale {{missing}} left over in
+        // body.json (the inactive representation) must not block the send.
+        let mut s = spec("https://api.dev");
+        s.body.mode = "form-urlencoded".into();
+        s.body.json = "{{missing}}".into();
+        s.body.form = vec![kv("user", "ada", true)];
+        apply_env(&mut s, &test_env(&[])).unwrap();
+        assert_eq!(s.body.json, "{{missing}}");
+        assert_eq!(s.body.form[0].value, "ada");
+    }
+
+    #[test]
+    fn apply_env_leaves_inactive_form_body_untouched_in_json_mode() {
+        // body.mode is json, so a stale {{missing}} in a form entry (the
+        // inactive representation) must not block the send.
+        let mut s = spec("https://api.dev");
+        s.body.json = r#"{"a":1}"#.into();
+        s.body.form = vec![kv("user", "{{missing}}", true)];
+        apply_env(&mut s, &test_env(&[])).unwrap();
+        assert_eq!(s.body.json, r#"{"a":1}"#);
+        assert_eq!(s.body.form[0].value, "{{missing}}");
     }
 
     #[test]

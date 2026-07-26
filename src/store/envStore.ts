@@ -38,6 +38,7 @@ export const useEnvStore = create<EnvState>((set, get) => ({
 
   async load(workspaceId) {
     const token = ++loadToken;
+    const sameWorkspace = get().workspaceId === workspaceId;
     let { environments, errors } = await api.listEnvironments(workspaceId);
     if (environments.length === 0 && errors.length === 0) {
       // first run in this workspace: seed the standard three
@@ -46,8 +47,16 @@ export const useEnvStore = create<EnvState>((set, get) => ({
       }
       ({ environments, errors } = await api.listEnvironments(workspaceId));
     }
-    const store = await getStore();
-    const saved = await store.get<string | null>(`activeEnv:${workspaceId}`);
+    // Reloading the same workspace: keep the in-memory activeId. setActive
+    // persists fire-and-forget, so the plugin-store value can still be stale
+    // mid-flight. Only read from the plugin-store when the workspace changed.
+    let saved: string | null;
+    if (sameWorkspace) {
+      saved = get().activeId;
+    } else {
+      const store = await getStore();
+      saved = (await store.get<string | null>(`activeEnv:${workspaceId}`)) ?? null;
+    }
     const activeId = environments.some((e) => e.id === saved) ? (saved as string) : null;
     if (token !== loadToken) return; // superseded by a newer load
     set({ environments, loadErrors: errors, workspaceId, activeId });
@@ -79,7 +88,9 @@ export const useEnvStore = create<EnvState>((set, get) => ({
     const ws = get().workspaceId;
     const env = get().environments.find((e) => e.id === id);
     if (!ws || !env) return;
-    await api.saveEnvironment(ws, { ...env, variables: vars });
+    const updated = { ...env, variables: vars };
+    set((s) => ({ environments: s.environments.map((e) => (e.id === id ? updated : e)) }));
+    await api.saveEnvironment(ws, updated);
     await get().load(ws);
   },
 }));

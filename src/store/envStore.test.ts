@@ -161,6 +161,26 @@ describe("load", () => {
 
     expect(useEnvStore.getState().activeId).toBeNull();
   });
+
+  it("keeps the in-memory activeId on a same-workspace reload even if the plugin-store is stale", async () => {
+    // store.get is hardwired to the OLD value regardless of what setActive
+    // fire-and-forget-persists, simulating a persist still in flight.
+    store = makeMockStore({ "activeEnv:ws1": "1" });
+    store.get = vi.fn(() => Promise.resolve("1"));
+    vi.mocked(getStore).mockResolvedValue(store as unknown as Store);
+    const envs = [env("1", "Development"), env("x", "Custom")];
+    vi.mocked(api.listEnvironments).mockResolvedValue({ environments: envs, errors: [] });
+
+    await useEnvStore.getState().load("ws1");
+    expect(useEnvStore.getState().activeId).toBe("1");
+
+    useEnvStore.getState().setActive("x");
+    expect(useEnvStore.getState().activeId).toBe("x");
+
+    await useEnvStore.getState().load("ws1"); // same workspace reload
+
+    expect(useEnvStore.getState().activeId).toBe("x");
+  });
 });
 
 describe("setActive", () => {
@@ -238,5 +258,37 @@ describe("updateVariables", () => {
 
     expect(api.saveEnvironment).toHaveBeenCalledWith("ws1", updated);
     expect(useEnvStore.getState().environments).toEqual([updated]);
+  });
+
+  it("applies the update optimistically so a second rapid call sees it before the first save resolves", async () => {
+    const existing = env("1", "Development", { A: "1" });
+    vi.mocked(api.listEnvironments).mockResolvedValue({ environments: [existing], errors: [] });
+    await useEnvStore.getState().load("ws1");
+
+    let resolveFirstSave!: () => void;
+    vi.mocked(api.saveEnvironment).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFirstSave = () => resolve(null);
+        }),
+    );
+    vi.mocked(api.listEnvironments).mockResolvedValue({ environments: [existing], errors: [] });
+
+    const firstCall = useEnvStore.getState().updateVariables("1", { A: "1", B: "2" });
+
+    // A second, rapid caller (e.g. the next keystroke in SettingsDialog) reads
+    // the store's current variables to build its own payload — it must see the
+    // first call's change even though the first save hasn't resolved yet.
+    const currentVars = useEnvStore.getState().environments[0].variables;
+    expect(currentVars).toEqual({ A: "1", B: "2" });
+
+    vi.mocked(api.saveEnvironment).mockResolvedValue(null);
+    const secondCall = useEnvStore.getState().updateVariables("1", { ...currentVars, C: "3" });
+
+    resolveFirstSave();
+    await Promise.all([firstCall, secondCall]);
+
+    const secondSaveArgs = vi.mocked(api.saveEnvironment).mock.calls[1];
+    expect(secondSaveArgs[1].variables).toEqual({ A: "1", B: "2", C: "3" });
   });
 });

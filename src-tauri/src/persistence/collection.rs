@@ -43,6 +43,8 @@ pub enum RequestKind {
         soap_version: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         input_element: Option<crate::domain::wsdl::QName>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        orphan: Option<bool>,
     },
 }
 
@@ -424,6 +426,261 @@ pub fn reorder_children(
     Ok(())
 }
 
+// ── F6 Update Definition ─────────────────────────────────────────────────────
+
+use crate::domain::wsdl::{DefinitionDiff, OperationRef, QName, SoapVersion};
+
+// Task 3 wires soap_snapshot/apply_definition_update into a command; until
+// then nothing outside tests calls into this section.
+#[allow(dead_code)]
+const ORPHANS_FOLDER_NAME: &str = "Orphans";
+
+#[allow(dead_code)]
+fn soap_version_str(v: SoapVersion) -> &'static str {
+    match v {
+        SoapVersion::V11 => "1.1",
+        SoapVersion::V12 => "1.2",
+    }
+}
+
+/// RequestKind for a fresh operation. Also used to refresh a stale request's
+/// metadata: everything the WSDL owns comes from `op`, orphan is cleared.
+#[allow(dead_code)]
+pub fn soap_kind(wsdl_url: &str, op: &OperationRef) -> RequestKind {
+    RequestKind::Soap {
+        wsdl_url: wsdl_url.to_string(),
+        operation: op.name.clone(),
+        endpoint: Some(op.endpoint.clone()),
+        soap_action: Some(op.soap_action.clone()),
+        soap_version: Some(soap_version_str(op.soap_version).to_string()),
+        input_element: Some(op.input_element.clone()),
+        orphan: None,
+    }
+}
+
+/// OperationRef as saved on disk. Missing optional metadata (pre-slice files)
+/// becomes empty defaults so the diff flags the operation as changed.
+#[allow(dead_code)]
+fn saved_operation_ref(kind: &RequestKind) -> Option<OperationRef> {
+    let RequestKind::Soap {
+        operation,
+        endpoint,
+        soap_action,
+        soap_version,
+        input_element,
+        ..
+    } = kind
+    else {
+        return None;
+    };
+    Some(OperationRef {
+        name: operation.clone(),
+        endpoint: endpoint.clone().unwrap_or_default(),
+        soap_action: soap_action.clone().unwrap_or_default(),
+        soap_version: match soap_version.as_deref() {
+            Some("1.2") => SoapVersion::V12,
+            _ => SoapVersion::V11,
+        },
+        input_element: input_element.clone().unwrap_or(QName {
+            namespace: String::new(),
+            local: String::new(),
+        }),
+    })
+}
+
+/// Recursively collect SOAP requests under `dir` as (id path relative to the
+/// collection root, file). `skip` omits one direct child of the root (Orphans).
+#[allow(dead_code)]
+fn collect_soap_requests(
+    dir: &Path,
+    prefix: &[String],
+    skip: Option<&str>,
+) -> anyhow::Result<Vec<(Vec<String>, RequestFile)>> {
+    let meta = read_folder_meta(dir)?;
+    let mut out = vec![];
+    for id in &meta.children_order {
+        if prefix.is_empty() && Some(id.as_str()) == skip {
+            continue;
+        }
+        let path: Vec<String> = prefix.iter().cloned().chain([id.clone()]).collect();
+        let sub = dir.join(id);
+        let file = dir.join(format!("{id}.toml"));
+        if sub.is_dir() {
+            out.extend(collect_soap_requests(&sub, &path, None)?);
+        } else if file.exists() {
+            let rf: RequestFile = toml::from_str(&std::fs::read_to_string(&file)?)?;
+            if matches!(rf.kind, RequestKind::Soap { .. }) {
+                out.push((path, rf));
+            }
+        }
+    }
+    Ok(out)
+}
+
+#[allow(dead_code)]
+fn find_by_operation<'a>(
+    reqs: &'a [(Vec<String>, RequestFile)],
+    name: &str,
+) -> Option<&'a (Vec<String>, RequestFile)> {
+    reqs.iter().find(
+        |(_, rf)| matches!(&rf.kind, RequestKind::Soap { operation, .. } if operation == name),
+    )
+}
+
+#[allow(dead_code)]
+fn find_orphans_folder(col_dir: &Path) -> anyhow::Result<Option<String>> {
+    let meta = read_folder_meta(col_dir)?;
+    for id in &meta.children_order {
+        let sub = col_dir.join(id);
+        if sub.is_dir() && read_folder_meta(&sub)?.name == ORPHANS_FOLDER_NAME {
+            return Ok(Some(id.clone()));
+        }
+    }
+    Ok(None)
+}
+
+/// Move a request file to another folder of the same collection, rewriting it
+/// with `rf` and keeping both children_order metas consistent.
+#[allow(dead_code)]
+fn move_request(
+    col_dir: &Path,
+    from: &[String],
+    to_folder: &[String],
+    rf: &RequestFile,
+) -> anyhow::Result<()> {
+    let id = from.last().ok_or_else(|| anyhow::anyhow!("empty path"))?;
+    let from_dir = resolve_path(col_dir, &from[..from.len() - 1]);
+    let to_dir = resolve_path(col_dir, to_folder);
+    std::fs::write(to_dir.join(format!("{id}.toml")), toml::to_string(rf)?)?;
+    if from_dir != to_dir {
+        std::fs::remove_file(from_dir.join(format!("{id}.toml")))?;
+        let mut m = read_folder_meta(&from_dir)?;
+        m.children_order.retain(|x| x != id);
+        write_folder_meta(&from_dir, &m)?;
+        let mut m = read_folder_meta(&to_dir)?;
+        m.children_order.push(id.clone());
+        write_folder_meta(&to_dir, &m)?;
+    }
+    Ok(())
+}
+
+/// wsdl_url + saved operation snapshot of an imported collection. Requests in
+/// the Orphans folder don't count as current operations.
+#[allow(dead_code)]
+pub fn soap_snapshot(
+    data_dir: &Path,
+    workspace_id: &str,
+    collection_id: &str,
+) -> anyhow::Result<(String, Vec<OperationRef>)> {
+    validate_ids(&[collection_id.to_string()])?;
+    let col_dir = collections_root(data_dir, workspace_id).join(collection_id);
+    let orphans = find_orphans_folder(&col_dir)?;
+    let reqs = collect_soap_requests(&col_dir, &[], orphans.as_deref())?;
+    let wsdl_url = reqs
+        .iter()
+        .find_map(|(_, rf)| match &rf.kind {
+            RequestKind::Soap { wsdl_url, .. } => Some(wsdl_url.clone()),
+            _ => None,
+        })
+        .ok_or_else(|| anyhow::anyhow!("collection has no SOAP requests"))?;
+    let ops = reqs
+        .iter()
+        .filter_map(|(_, rf)| saved_operation_ref(&rf.kind))
+        .collect();
+    Ok((wsdl_url, ops))
+}
+
+/// Apply a previewed diff: create new requests (restoring matching orphans),
+/// refresh changed metadata in place, and move removed operations into the
+/// Orphans folder — never delete (product.md F6).
+#[allow(dead_code)]
+pub fn apply_definition_update(
+    data_dir: &Path,
+    workspace_id: &str,
+    collection_id: &str,
+    wsdl_url: &str,
+    diff: &DefinitionDiff,
+) -> anyhow::Result<()> {
+    validate_ids(&[collection_id.to_string()])?;
+    let col_dir = collections_root(data_dir, workspace_id).join(collection_id);
+    let mut orphans_id = find_orphans_folder(&col_dir)?;
+
+    // Removed → Orphans (folder created on first use) + orphan flag.
+    if !diff.removed.is_empty() {
+        let oid = match &orphans_id {
+            Some(id) => id.clone(),
+            None => {
+                let CollectionNode::Folder { id, .. } = create_folder(
+                    data_dir,
+                    workspace_id,
+                    vec![collection_id.to_string()],
+                    ORPHANS_FOLDER_NAME,
+                )?
+                else {
+                    anyhow::bail!("create_folder did not return a folder");
+                };
+                orphans_id = Some(id.clone());
+                id
+            }
+        };
+        let current = collect_soap_requests(&col_dir, &[], Some(&oid))?;
+        for name in &diff.removed {
+            let Some((path, rf)) = find_by_operation(&current, name) else {
+                continue; // already moved or hand-deleted; nothing to orphan
+            };
+            let mut rf = rf.clone();
+            if let RequestKind::Soap { orphan, .. } = &mut rf.kind {
+                *orphan = Some(true);
+            }
+            move_request(&col_dir, path, &[oid.clone()], &rf)?;
+        }
+    }
+
+    // New → restore a matching orphan, else create at the collection root.
+    for op in &diff.new {
+        let restored = if let Some(oid) = &orphans_id {
+            let orphaned = collect_soap_requests(&col_dir.join(oid), &[oid.clone()], None)?;
+            match find_by_operation(&orphaned, &op.name) {
+                Some((path, rf)) => {
+                    let mut rf = rf.clone();
+                    rf.kind = soap_kind(wsdl_url, op);
+                    move_request(&col_dir, path, &[], &rf)?;
+                    true
+                }
+                None => false,
+            }
+        } else {
+            false
+        };
+        if !restored {
+            create_request(
+                data_dir,
+                workspace_id,
+                vec![collection_id.to_string()],
+                &op.name,
+                soap_kind(wsdl_url, op),
+            )?;
+        }
+    }
+
+    // Changed → refresh metadata in place, wherever the request lives.
+    let current = collect_soap_requests(&col_dir, &[], orphans_id.as_deref())?;
+    for op in &diff.changed {
+        let Some((path, rf)) = find_by_operation(&current, &op.name) else {
+            continue;
+        };
+        let mut rf = rf.clone();
+        rf.kind = soap_kind(wsdl_url, op);
+        let parent = resolve_path(&col_dir, &path[..path.len() - 1]);
+        std::fs::write(
+            parent.join(format!("{}.toml", rf.id)),
+            toml::to_string(&rf)?,
+        )?;
+    }
+
+    Ok(())
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -749,6 +1006,7 @@ mod tests {
                 namespace: "http://x/ns".into(),
                 local: "Add".into(),
             }),
+            orphan: None,
         };
         let node = create_request(&dir, "w1", vec![col_id.clone()], "Add", kind).unwrap();
         let CollectionNode::Request(RequestNode { id, .. }) = &node else {
@@ -776,5 +1034,241 @@ mod tests {
             r#"{"id":"r1","name":"Old","kind":"soap","wsdlUrl":"http://x?wsdl","operation":"Op"}"#;
         let rf: RequestFile = serde_json::from_str(json).unwrap();
         assert!(matches!(rf.kind, RequestKind::Soap { endpoint: None, .. }));
+    }
+
+    use crate::domain::wsdl::{DefinitionDiff, OperationRef, QName, SoapVersion};
+
+    fn fresh_op(name: &str, endpoint: &str) -> OperationRef {
+        OperationRef {
+            name: name.into(),
+            endpoint: endpoint.into(),
+            soap_action: format!("http://x/{name}"),
+            soap_version: SoapVersion::V11,
+            input_element: QName {
+                namespace: "http://x/ns".into(),
+                local: name.into(),
+            },
+        }
+    }
+
+    fn empty_diff() -> DefinitionDiff {
+        DefinitionDiff {
+            new: vec![],
+            changed: vec![],
+            removed: vec![],
+            unchanged: 0,
+        }
+    }
+
+    /// Import a service with the given ops; returns the collection id.
+    fn import_service(dir: &Path, ops: &[OperationRef]) -> String {
+        let col = create_collection(dir, "w1", "Svc").unwrap();
+        let CollectionNode::Folder { id, .. } = col else {
+            panic!()
+        };
+        for op in ops {
+            create_request(
+                dir,
+                "w1",
+                vec![id.clone()],
+                &op.name,
+                soap_kind("http://x?wsdl", op),
+            )
+            .unwrap();
+        }
+        id
+    }
+
+    /// (request display name, kind) for every SOAP request directly under `path`.
+    fn soap_children_at(dir: &Path, path: &[String]) -> Vec<(String, RequestKind)> {
+        let nodes = list_collections(dir, "w1").unwrap();
+        let mut cur = nodes;
+        for id in path {
+            cur = cur
+                .into_iter()
+                .find_map(|n| match n {
+                    CollectionNode::Folder {
+                        id: fid, children, ..
+                    } if &fid == id => Some(children),
+                    _ => None,
+                })
+                .unwrap();
+        }
+        cur.into_iter()
+            .filter_map(|n| match n {
+                CollectionNode::Request(r) if matches!(r.kind, RequestKind::Soap { .. }) => {
+                    Some((r.name, r.kind))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Id of the Orphans folder inside the collection, if present.
+    fn orphans_folder_id(dir: &Path, col_id: &str) -> Option<String> {
+        let nodes = list_collections(dir, "w1").unwrap();
+        let children = nodes.into_iter().find_map(|n| match n {
+            CollectionNode::Folder { id, children, .. } if id == col_id => Some(children),
+            _ => None,
+        })?;
+        children.into_iter().find_map(|n| match n {
+            CollectionNode::Folder { id, name, .. } if name == "Orphans" => Some(id),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn snapshot_returns_wsdl_url_and_current_ops_excluding_orphans() {
+        let dir = tmp("f6-snapshot");
+        let col = import_service(
+            &dir,
+            &[
+                fresh_op("Add", "http://x/svc"),
+                fresh_op("Sub", "http://x/svc"),
+            ],
+        );
+        // orphan "Sub" first so the snapshot must skip it
+        let diff = DefinitionDiff {
+            removed: vec!["Sub".into()],
+            ..empty_diff()
+        };
+        apply_definition_update(&dir, "w1", &col, "http://x?wsdl", &diff).unwrap();
+
+        let (url, ops) = soap_snapshot(&dir, "w1", &col).unwrap();
+        assert_eq!(url, "http://x?wsdl");
+        assert_eq!(ops.len(), 1);
+        assert_eq!(ops[0].name, "Add");
+    }
+
+    #[test]
+    fn apply_creates_requests_for_new_operations() {
+        let dir = tmp("f6-new");
+        let col = import_service(&dir, &[fresh_op("Add", "http://x/svc")]);
+        let diff = DefinitionDiff {
+            new: vec![fresh_op("Mul", "http://x/svc")],
+            ..empty_diff()
+        };
+        apply_definition_update(&dir, "w1", &col, "http://x?wsdl", &diff).unwrap();
+
+        let children = soap_children_at(&dir, &[col.clone()]);
+        assert_eq!(children.len(), 2);
+        assert!(children.iter().any(|(n, _)| n == "Mul"));
+    }
+
+    #[test]
+    fn apply_moves_removed_operations_to_orphans_folder() {
+        let dir = tmp("f6-orphan");
+        let col = import_service(
+            &dir,
+            &[
+                fresh_op("Add", "http://x/svc"),
+                fresh_op("Sub", "http://x/svc"),
+            ],
+        );
+        let diff = DefinitionDiff {
+            removed: vec!["Sub".into()],
+            ..empty_diff()
+        };
+        apply_definition_update(&dir, "w1", &col, "http://x?wsdl", &diff).unwrap();
+
+        // gone from the collection root
+        let root_children = soap_children_at(&dir, &[col.clone()]);
+        assert_eq!(
+            root_children.len(),
+            1,
+            "orphaned request must leave the root, never be deleted"
+        );
+        // present in Orphans with the flag set
+        let orphans = orphans_folder_id(&dir, &col).expect("Orphans folder created");
+        let orphaned = soap_children_at(&dir, &[col.clone(), orphans]);
+        assert_eq!(orphaned.len(), 1);
+        assert!(matches!(
+            &orphaned[0].1,
+            RequestKind::Soap {
+                orphan: Some(true),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn apply_refreshes_changed_metadata_preserving_user_data() {
+        let dir = tmp("f6-changed");
+        let col = import_service(&dir, &[fresh_op("Add", "http://x/svc")]);
+        // save user data on the request
+        let nodes = list_collections(&dir, "w1").unwrap();
+        let CollectionNode::Folder { children, .. } = &nodes[0] else {
+            panic!()
+        };
+        let CollectionNode::Request(req) = children[0].clone() else {
+            panic!()
+        };
+        update_request(
+            &dir,
+            "w1",
+            vec![col.clone(), req.id.clone()],
+            RequestContent {
+                kind: req.kind.clone(),
+                params: vec![],
+                headers: vec![KeyValueEntry {
+                    id: "h1".into(),
+                    key: "X-Trace".into(),
+                    value: "on".into(),
+                    description: None,
+                    enabled: true,
+                    entry_type: None,
+                }],
+                body: None,
+                auth: None,
+            },
+        )
+        .unwrap();
+
+        let diff = DefinitionDiff {
+            changed: vec![fresh_op("Add", "http://x/v2/svc")],
+            ..empty_diff()
+        };
+        apply_definition_update(&dir, "w1", &col, "http://x?wsdl", &diff).unwrap();
+
+        let rf = get_request(&dir, "w1", vec![col.clone(), req.id]).unwrap();
+        let RequestKind::Soap { endpoint, .. } = &rf.kind else {
+            panic!()
+        };
+        assert_eq!(endpoint.as_deref(), Some("http://x/v2/svc"));
+        assert_eq!(
+            rf.headers.len(),
+            1,
+            "user headers must survive a metadata refresh"
+        );
+    }
+
+    #[test]
+    fn apply_restores_an_orphan_when_its_operation_returns() {
+        let dir = tmp("f6-unorphan");
+        let col = import_service(
+            &dir,
+            &[
+                fresh_op("Add", "http://x/svc"),
+                fresh_op("Sub", "http://x/svc"),
+            ],
+        );
+        let remove = DefinitionDiff {
+            removed: vec!["Sub".into()],
+            ..empty_diff()
+        };
+        apply_definition_update(&dir, "w1", &col, "http://x?wsdl", &remove).unwrap();
+
+        let back = DefinitionDiff {
+            new: vec![fresh_op("Sub", "http://x/svc")],
+            ..empty_diff()
+        };
+        apply_definition_update(&dir, "w1", &col, "http://x?wsdl", &back).unwrap();
+
+        let root_children = soap_children_at(&dir, &[col.clone()]);
+        assert_eq!(root_children.len(), 2, "restored, not duplicated");
+        let sub = root_children.iter().find(|(n, _)| n == "Sub").unwrap();
+        assert!(matches!(&sub.1, RequestKind::Soap { orphan: None, .. }));
+        let orphans = orphans_folder_id(&dir, &col).unwrap();
+        assert!(soap_children_at(&dir, &[col.clone(), orphans]).is_empty());
     }
 }

@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { RotateCcw, Trash2, X } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { api } from "../../lib/api";
+import type { HistoryEntry } from "../../lib/api";
 import { useHistoryStore } from "../../store/historyStore";
 import { useRequestStore } from "../../store/requestStore";
 
@@ -19,15 +21,47 @@ export function HistoryDrawer() {
   const view = useHistoryStore((s) => s.view);
   const close = useHistoryStore((s) => s.close);
   const clear = useHistoryStore((s) => s.clear);
+  const refresh = useHistoryStore((s) => s.refresh);
   const applyHistorySpec = useRequestStore((s) => s.applyHistorySpec);
   const dirty = useRequestStore((s) => (openFor ? s.openRequests[openFor]?.dirty : false));
+
+  // Pending inline confirmation: an entry id awaiting a second click to restore,
+  // "clear" awaiting a second click to clear history, or null.
+  const [pending, setPending] = useState<number | "clear" | null>(null);
+
+  useEffect(() => {
+    setPending(null);
+  }, [openFor]);
 
   if (!openFor) return null;
 
   const restore = async (entryId: number) => {
-    if (dirty && !window.confirm("Overwrite the current draft with this execution's request?")) return;
-    const entry = await api.getHistoryEntry(entryId);
+    let entry: HistoryEntry;
+    try {
+      entry = await api.getHistoryEntry(entryId);
+    } catch {
+      await refresh(openFor);
+      return;
+    }
     applyHistorySpec(openFor, entry.spec);
+  };
+
+  const handleRestoreClick = (entryId: number) => {
+    if (dirty && pending !== entryId) {
+      setPending(entryId);
+      return;
+    }
+    setPending(null);
+    void restore(entryId);
+  };
+
+  const handleClearClick = () => {
+    if (pending !== "clear") {
+      setPending("clear");
+      return;
+    }
+    setPending(null);
+    void clear(openFor);
   };
 
   return (
@@ -47,7 +81,10 @@ export function HistoryDrawer() {
         {entries.map((e) => (
           <div
             key={e.id}
-            onClick={() => view(openFor, e.id)}
+            onClick={() => {
+              setPending(null);
+              view(openFor, e.id);
+            }}
             className="group flex items-center gap-2 px-3 py-2 border-b border-border/50 cursor-pointer hover:bg-secondary/60"
           >
             <span
@@ -65,17 +102,30 @@ export function HistoryDrawer() {
               {e.durationMs != null ? `${e.durationMs}ms · ` : ""}
               {relativeTime(e.executedAtMs)}
             </span>
-            <button
-              type="button"
-              onClick={(ev) => {
-                ev.stopPropagation();
-                void restore(e.id);
-              }}
-              className="opacity-0 group-hover:opacity-100 text-muted hover:text-foreground cursor-pointer"
-              title="Restore this request into the editor"
-            >
-              <RotateCcw size={13} />
-            </button>
+            {pending === e.id ? (
+              <button
+                type="button"
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  handleRestoreClick(e.id);
+                }}
+                className="text-[10px] font-medium text-destructive hover:underline cursor-pointer"
+              >
+                Overwrite?
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  handleRestoreClick(e.id);
+                }}
+                className="opacity-0 group-hover:opacity-100 text-muted hover:text-foreground cursor-pointer"
+                title="Restore this request into the editor"
+              >
+                <RotateCcw size={13} />
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -83,12 +133,13 @@ export function HistoryDrawer() {
       {entries.length > 0 && (
         <button
           type="button"
-          onClick={() => {
-            if (window.confirm("Clear all history for this request?")) void clear(openFor);
-          }}
-          className="flex items-center gap-2 px-3 py-2 text-[12px] text-muted hover:text-destructive border-t border-border cursor-pointer"
+          onClick={handleClearClick}
+          className={cn(
+            "flex items-center gap-2 px-3 py-2 text-[12px] border-t border-border cursor-pointer",
+            pending === "clear" ? "text-destructive" : "text-muted hover:text-destructive",
+          )}
         >
-          <Trash2 size={13} /> Clear history
+          <Trash2 size={13} /> {pending === "clear" ? "Really clear?" : "Clear history"}
         </button>
       )}
     </div>

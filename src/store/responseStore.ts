@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { HttpResponse } from "../lib/response-types";
 import { OpenRequest, methodAllowsBody } from "../lib/request-types";
 import { api } from "../lib/api";
+import { useHistoryStore } from "./historyStore";
 
 export type ResponseEntry =
   | { state: "loading" }
@@ -29,6 +30,7 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
     // saved to a collection — no id to attach history to.
     const historyId = request.path.length > 0 ? request.id : null;
     const mySeq = (get().seq[id] ?? 0) + 1;
+    useHistoryStore.getState().backToLive(id); // a new send outranks a history view
     set((s) => ({
       seq: { ...s.seq, [id]: mySeq },
       responses: { ...s.responses, [id]: { state: "loading" } },

@@ -15,6 +15,7 @@ import { api, FormValue, HistorySpec, RequestFileData } from "../lib/api";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useCollectionStore } from "./collectionStore";
 import { useResponseStore } from "./responseStore";
+import { useHistoryStore } from "./historyStore";
 import { defaultFormValue } from "./soapForm";
 
 interface RequestState {
@@ -142,6 +143,8 @@ export const useRequestStore = create<RequestState>((set, get) => ({
       return { openRequests: rest, order, activeId };
     });
     useResponseStore.getState().clear(id);
+    useHistoryStore.getState().close();
+    useHistoryStore.getState().backToLive(id);
   },
 
   closeRequestsUnder(prefix) {
@@ -168,7 +171,10 @@ export const useRequestStore = create<RequestState>((set, get) => ({
     useResponseStore.getState().clearAll();
   },
 
-  setActive(id) { set({ activeId: id }); },
+  setActive(id) {
+    set({ activeId: id });
+    useHistoryStore.getState().close();
+  },
 
   setUrl(id, url) {
     set((s) => ({ openRequests: patch(s.openRequests, id, { url, dirty: true }) }));

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { api } from "../lib/api";
-import type { HistoryEntrySummary, HttpResponse } from "../lib/api";
+import type { HistoryEntry, HistoryEntrySummary, HttpResponse } from "../lib/api";
 
 interface HistoryState {
   /** Request id the drawer is open for; null = closed. */
@@ -50,7 +50,13 @@ export const useHistoryStore = create<HistoryState>((set, get) => ({
   },
 
   async view(requestId, entryId) {
-    const entry = await api.getHistoryEntry(entryId);
+    let entry: HistoryEntry;
+    try {
+      entry = await api.getHistoryEntry(entryId);
+    } catch {
+      await get().refresh(requestId); // stale entry — drop it from the list
+      return;
+    }
     if (entry.response) {
       set((s) => ({ viewing: { ...s.viewing, [requestId]: entry.response! } }));
     }

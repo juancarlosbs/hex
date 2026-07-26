@@ -86,6 +86,15 @@ describe("view / backToLive", () => {
     useHistoryStore.getState().backToLive("r1");
     expect(useHistoryStore.getState().viewing.r1).toBeUndefined();
   });
+
+  it("does not set viewing and re-fetches the list when the entry fails to load", async () => {
+    vi.mocked(api.getHistoryEntry).mockRejectedValue(new Error("not found"));
+    vi.mocked(api.listHistory).mockResolvedValue([]);
+    useHistoryStore.setState({ openFor: "r1", entries: [SUMMARY], loading: false, viewing: {} });
+    await useHistoryStore.getState().view("r1", 1);
+    expect(useHistoryStore.getState().viewing.r1).toBeUndefined();
+    expect(api.listHistory).toHaveBeenCalledWith("r1");
+  });
 });
 
 describe("clear", () => {

@@ -1,0 +1,96 @@
+import { RotateCcw, Trash2, X } from "lucide-react";
+import { cn } from "../../lib/utils";
+import { api } from "../../lib/api";
+import { useHistoryStore } from "../../store/historyStore";
+import { useRequestStore } from "../../store/requestStore";
+
+function relativeTime(ms: number): string {
+  const diff = Math.max(0, Date.now() - ms);
+  if (diff < 60_000) return "just now";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return `${Math.floor(diff / 86_400_000)}d ago`;
+}
+
+export function HistoryDrawer() {
+  const openFor = useHistoryStore((s) => s.openFor);
+  const entries = useHistoryStore((s) => s.entries);
+  const loading = useHistoryStore((s) => s.loading);
+  const view = useHistoryStore((s) => s.view);
+  const close = useHistoryStore((s) => s.close);
+  const clear = useHistoryStore((s) => s.clear);
+  const applyHistorySpec = useRequestStore((s) => s.applyHistorySpec);
+  const dirty = useRequestStore((s) => (openFor ? s.openRequests[openFor]?.dirty : false));
+
+  if (!openFor) return null;
+
+  const restore = async (entryId: number) => {
+    if (dirty && !window.confirm("Overwrite the current draft with this execution's request?")) return;
+    const entry = await api.getHistoryEntry(entryId);
+    applyHistorySpec(openFor, entry.spec);
+  };
+
+  return (
+    <div className="absolute inset-y-0 right-0 w-[300px] z-10 flex flex-col bg-card border-l border-border shadow-lg">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+        <span className="text-[12px] font-semibold text-foreground">History</span>
+        <button type="button" onClick={close} className="text-muted hover:text-foreground cursor-pointer" title="Close">
+          <X size={14} />
+        </button>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {loading && <div className="p-3 text-[12px] text-muted">Loading…</div>}
+        {!loading && entries.length === 0 && (
+          <div className="p-3 text-[12px] text-muted">No sends yet — hit Send and it will show up here.</div>
+        )}
+        {entries.map((e) => (
+          <div
+            key={e.id}
+            onClick={() => view(openFor, e.id)}
+            className="group flex items-center gap-2 px-3 py-2 border-b border-border/50 cursor-pointer hover:bg-secondary/60"
+          >
+            <span
+              className={cn(
+                "text-[11px] font-semibold px-[6px] py-[1px] rounded-[4px]",
+                e.error != null || (e.status ?? 0) >= 400
+                  ? "bg-destructive/15 text-destructive"
+                  : "bg-primary/15 text-primary",
+              )}
+            >
+              {e.error != null ? "Error" : e.status}
+            </span>
+            <span className="text-[12px] text-foreground">{e.method}</span>
+            <span className="flex-1 text-right text-[11px] text-muted">
+              {e.durationMs != null ? `${e.durationMs}ms · ` : ""}
+              {relativeTime(e.executedAtMs)}
+            </span>
+            <button
+              type="button"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                void restore(e.id);
+              }}
+              className="opacity-0 group-hover:opacity-100 text-muted hover:text-foreground cursor-pointer"
+              title="Restore this request into the editor"
+            >
+              <RotateCcw size={13} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {entries.length > 0 && (
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm("Clear all history for this request?")) void clear(openFor);
+          }}
+          className="flex items-center gap-2 px-3 py-2 text-[12px] text-muted hover:text-destructive border-t border-border cursor-pointer"
+        >
+          <Trash2 size={13} /> Clear history
+        </button>
+      )}
+    </div>
+  );
+}

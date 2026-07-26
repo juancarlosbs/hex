@@ -10,22 +10,44 @@ import { ResponseBodyView as BodyView } from "./body/ResponseBodyView";
 import { Waterfall } from "./Waterfall";
 import { useRequestStore } from "../../store/requestStore";
 import { useResponseStore } from "../../store/responseStore";
+import { useHistoryStore } from "../../store/historyStore";
 
 export function ResponsePanel() {
   const activeId = useRequestStore((s) => s.activeId);
   const entry = useResponseStore((s) => (activeId ? s.responses[activeId] : undefined));
+  const viewing = useHistoryStore((s) => (activeId ? s.viewing[activeId] : undefined));
+  const backToLive = useHistoryStore((s) => s.backToLive);
   const [activeTab, setActiveTab] = useState<ResponseTab>("body");
   const [bodyView, setBodyView] = useState<BodyViewKind>("tree");
   const [filter, setFilter] = useState("");
 
-  if (!entry) return <ResponsePlaceholder />;
-  if (entry.state === "loading") return <LoadingView />;
-  if (entry.state === "error") return <ErrorView message={entry.error} />;
-
-  const response = entry.response;
+  let response: HttpResponse;
+  if (viewing) {
+    response = viewing;
+  } else if (entry && entry.state === "done") {
+    response = entry.response;
+  } else if (!entry) {
+    return <ResponsePlaceholder />;
+  } else if (entry.state === "loading") {
+    return <LoadingView />;
+  } else {
+    return <ErrorView message={entry.error} />;
+  }
 
   return (
     <aside className="flex flex-col h-full bg-card border-l border-border">
+      {viewing && activeId && (
+        <div className="flex items-center justify-between px-3 py-[6px] bg-secondary border-b border-border text-[12px] text-muted">
+          <span>Viewing a past response{response.truncated ? " (body truncated at 1 MB)" : ""}</span>
+          <button
+            type="button"
+            onClick={() => backToLive(activeId)}
+            className="text-foreground cursor-pointer hover:underline"
+          >
+            Back to live
+          </button>
+        </div>
+      )}
       {response.fault ? <SoapFaultBanner fault={response.fault} /> : <ResponseStatusBar response={response} />}
       <ResponseTabsStrip activeTab={activeTab} onTabChange={setActiveTab} />
       {activeTab === "body" && (

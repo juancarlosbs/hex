@@ -271,6 +271,7 @@ use crate::engine;
 
 #[tauri::command]
 #[specta::specta]
+#[allow(clippy::too_many_arguments)]
 pub async fn send_soap(
     app: tauri::AppHandle,
     workspace_id: String,

@@ -77,6 +77,17 @@ pub fn delete_node(
 
 #[tauri::command]
 #[specta::specta]
+pub fn duplicate_node(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    path: Vec<String>,
+) -> Result<CollectionNode, String> {
+    let dir = data_dir(&app)?;
+    collection::duplicate_node(&dir, &workspace_id, path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn reorder_children(
     app: tauri::AppHandle,
     workspace_id: String,

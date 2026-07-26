@@ -19,6 +19,7 @@ import { cn } from "../lib/utils";
 import { CollectionNode } from "../lib/api";
 import { useCollectionStore } from "../store/collectionStore";
 import { useRequestStore } from "../store/requestStore";
+import { useUpdateDefinitionStore } from "../store/updateDefinitionStore";
 
 const METHOD_COLORS: Record<string, string> = {
   GET: "text-method-get",
@@ -34,7 +35,8 @@ type MenuAction =
   | { type: "rename"; path: string[]; currentName: string }
   | { type: "delete"; path: string[] }
   | { type: "newFolder"; parentPath: string[] }
-  | { type: "newRequest"; parentPath: string[] };
+  | { type: "newRequest"; parentPath: string[] }
+  | { type: "updateDefinition"; collectionId: string };
 
 function ContextMenu({
   x,
@@ -63,6 +65,7 @@ function ContextMenu({
     if (a.type === "rename") return "Rename";
     if (a.type === "delete") return "Delete";
     if (a.type === "newFolder") return "New Folder";
+    if (a.type === "updateDefinition") return "Update Definition";
     return "New Request";
   };
 
@@ -134,6 +137,12 @@ function RenameInput({
 
 const arraysEqual = (a: string[], b: string[]) =>
   a.length === b.length && a.every((v, i) => v === b[i]);
+
+function hasSoapRequest(node: Extract<CollectionNode, { type: "folder" }>): boolean {
+  return node.children.some((c) =>
+    c.type === "request" ? c.kind === "soap" : hasSoapRequest(c)
+  );
+}
 
 // ── SortableList (one DndContext per level) ───────────────────────────────────
 
@@ -280,6 +289,7 @@ function SortableFolderItem({
   const rename = useCollectionStore((s) => s.rename);
   const remove = useCollectionStore((s) => s.remove);
   const closeRequestsUnder = useRequestStore((s) => s.closeRequestsUnder);
+  const startUpdateDefinition = useUpdateDefinitionStore((s) => s.start);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: node.id });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
@@ -297,9 +307,14 @@ function SortableFolderItem({
     }
     if (a.type === "newFolder") { setOpen(true); onPendingCreate(path, "folder"); }
     if (a.type === "newRequest") { setOpen(true); onPendingCreate(path, "request"); }
+    if (a.type === "updateDefinition") startUpdateDefinition(workspaceId, a.collectionId);
   }
 
+  // Update Definition targets an imported service: a root collection holding SOAP requests.
   const menuActions: MenuAction[] = [
+    ...(path.length === 1 && hasSoapRequest(node)
+      ? [{ type: "updateDefinition", collectionId: node.id } satisfies MenuAction]
+      : []),
     { type: "newRequest", parentPath: path },
     { type: "newFolder", parentPath: path },
     { type: "rename", path, currentName: node.name },

@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { FolderPlus, Globe, Plus, RefreshCw, Search } from "lucide-react";
 import { CollectionTree, CollectionTreeHandle } from "./CollectionTree";
 import { ImportWsdlModal } from "./ImportWsdlModal";
+import { UpdateDefinitionModal } from "./UpdateDefinitionModal";
 import { useWorkspaceStore } from "../store/workspaceStore";
 
 export function Sidebar() {
@@ -66,6 +67,7 @@ export function Sidebar() {
       </div>
 
       <ImportWsdlModal open={importOpen} onClose={() => setImportOpen(false)} />
+      <UpdateDefinitionModal />
     </aside>
   );
 }

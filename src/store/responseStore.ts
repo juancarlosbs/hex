@@ -63,6 +63,11 @@ export const useResponseStore = create<ResponseState>((set, get) => ({
       entry = { state: "done", response };
     } catch (e) {
       entry = { state: "error", error: String(e) };
+      if (entry.error.includes("environment not found")) {
+        // Stale id: the frontend's selection is out of sync with disk (e.g. deleted
+        // elsewhere). Refresh the env list so the selector drops it (spec row 3).
+        void useEnvStore.getState().load(workspaceId);
+      }
     }
 
     if (get().seq[id] !== mySeq) return; // cancelled or superseded

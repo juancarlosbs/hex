@@ -58,8 +58,12 @@ describe("load", () => {
     expect(useEnvStore.getState().workspaceId).toBe("ws1");
   });
 
-  it("seeds Development/Staging/Production when the workspace is empty", async () => {
-    const seeded = [env("a", "Development"), env("b", "Staging"), env("c", "Production")];
+  it("seeds Development/Staging/Production with fixed ids when the workspace is empty", async () => {
+    const seeded = [
+      env("development", "Development"),
+      env("staging", "Staging"),
+      env("production", "Production"),
+    ];
     vi.mocked(api.listEnvironments)
       .mockResolvedValueOnce({ environments: [], errors: [] })
       .mockResolvedValueOnce({ environments: seeded, errors: [] });
@@ -68,10 +72,59 @@ describe("load", () => {
     await useEnvStore.getState().load("ws1");
 
     expect(api.saveEnvironment).toHaveBeenCalledTimes(3);
-    const savedNames = vi.mocked(api.saveEnvironment).mock.calls.map(([, e]) => e.name);
-    expect(savedNames).toEqual(["Development", "Staging", "Production"]);
+    const saved = vi.mocked(api.saveEnvironment).mock.calls.map(([, e]) => [e.id, e.name]);
+    expect(saved).toEqual([
+      ["development", "Development"],
+      ["staging", "Staging"],
+      ["production", "Production"],
+    ]);
     expect(api.listEnvironments).toHaveBeenCalledTimes(2);
     expect(useEnvStore.getState().environments).toEqual(seeded);
+  });
+
+  it("converges to 3 files when two concurrent loads both seed an empty workspace", async () => {
+    // Simulates React StrictMode double-mount: two loads race against the same
+    // empty workspace. Fixed seed ids mean save_environment overwrites by id,
+    // so both loads' seed writes target the same 3 files, not 6.
+    const seeded = [
+      env("development", "Development"),
+      env("staging", "Staging"),
+      env("production", "Production"),
+    ];
+    vi.mocked(api.listEnvironments)
+      .mockResolvedValueOnce({ environments: [], errors: [] })
+      .mockResolvedValueOnce({ environments: [], errors: [] })
+      .mockResolvedValue({ environments: seeded, errors: [] });
+    vi.mocked(api.saveEnvironment).mockResolvedValue(null);
+
+    await Promise.all([useEnvStore.getState().load("ws1"), useEnvStore.getState().load("ws1")]);
+
+    expect(api.saveEnvironment).toHaveBeenCalledTimes(6);
+    const ids = new Set(vi.mocked(api.saveEnvironment).mock.calls.map(([, e]) => e.id));
+    expect(ids).toEqual(new Set(["development", "staging", "production"]));
+  });
+
+  it("discards a slow load for a stale workspace when a newer load resolves first", async () => {
+    let resolveSlow!: (v: { environments: Environment[]; errors: string[] }) => void;
+    vi.mocked(api.listEnvironments)
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSlow = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({ environments: [env("2", "Staging")], errors: [] });
+
+    const slow = useEnvStore.getState().load("wsA");
+    const fast = useEnvStore.getState().load("wsB");
+    await fast;
+    expect(useEnvStore.getState().workspaceId).toBe("wsB");
+
+    resolveSlow({ environments: [env("1", "Development")], errors: [] });
+    await slow;
+
+    // the slow, now-stale load for wsA must not have overwritten wsB's state
+    expect(useEnvStore.getState().workspaceId).toBe("wsB");
+    expect(useEnvStore.getState().environments).toEqual([env("2", "Staging")]);
   });
 
   it("does not seed when the workspace is empty because of load errors", async () => {

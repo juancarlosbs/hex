@@ -8,6 +8,7 @@ import { useResponseStore } from "./responseStore";
 import { makeEmptyRequest } from "../lib/request-types";
 import { HttpResponse } from "../lib/response-types";
 import { api } from "../lib/api";
+import { useEnvStore } from "./envStore";
 
 const RESP: HttpResponse = {
   status: 200,
@@ -139,6 +140,26 @@ describe("send", () => {
       soapVersion: "1.2",
     });
     expect(api.sendSoap).not.toHaveBeenCalled();
+  });
+});
+
+describe("send error triggers environment reload", () => {
+  it("reloads the env list when the send fails with a stale environment id", async () => {
+    vi.mocked(api.sendRequest).mockRejectedValue("environment not found: gone");
+    const loadSpy = vi.spyOn(useEnvStore.getState(), "load").mockResolvedValue(undefined);
+
+    await useResponseStore.getState().send(request());
+
+    expect(loadSpy).toHaveBeenCalledWith("default");
+  });
+
+  it("does not reload the env list for other send errors", async () => {
+    vi.mocked(api.sendRequest).mockRejectedValue("connection refused");
+    const loadSpy = vi.spyOn(useEnvStore.getState(), "load").mockResolvedValue(undefined);
+
+    await useResponseStore.getState().send(request());
+
+    expect(loadSpy).not.toHaveBeenCalled();
   });
 });
 

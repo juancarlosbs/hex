@@ -133,40 +133,44 @@ fn build_request(spec: &SendSpec) -> Result<BuiltRequest, String> {
 /// Interpolates {{var}} in everything that leaves on the wire: URL, enabled
 /// params/headers, body, auth. Disabled entries stay untouched — they are not sent.
 /// Runs BEFORE build_request, so auth/body defaults see final values.
+/// Errors name the field the unknown variable appeared in (spec: error handling table).
 pub fn apply_env(
     spec: &mut SendSpec,
     environment: &crate::domain::env::Environment,
 ) -> Result<(), String> {
-    let interp =
-        |s: &str| crate::domain::env::interpolate(s, environment).map_err(|e| e.to_string());
+    let interp = |s: &str, field: &str| {
+        crate::domain::env::interpolate(s, environment).map_err(|e| format!("{e} in {field}"))
+    };
 
-    spec.url = interp(&spec.url)?;
-    for kv in spec
-        .params
-        .iter_mut()
-        .chain(spec.headers.iter_mut())
-        .filter(|kv| kv.enabled)
-    {
-        kv.key = interp(&kv.key)?;
-        kv.value = interp(&kv.value)?;
+    spec.url = interp(&spec.url, "URL")?;
+    for kv in spec.params.iter_mut().filter(|kv| kv.enabled) {
+        let field = format!("query param \"{}\"", kv.key);
+        kv.key = interp(&kv.key, &field)?;
+        kv.value = interp(&kv.value, &field)?;
     }
-    spec.body.json = interp(&spec.body.json)?;
+    for kv in spec.headers.iter_mut().filter(|kv| kv.enabled) {
+        let field = format!("header \"{}\"", kv.key);
+        kv.key = interp(&kv.key, &field)?;
+        kv.value = interp(&kv.value, &field)?;
+    }
+    spec.body.json = interp(&spec.body.json, "body")?;
     for kv in spec.body.form.iter_mut().filter(|kv| kv.enabled) {
-        kv.key = interp(&kv.key)?;
-        kv.value = interp(&kv.value)?;
+        let field = format!("form field \"{}\"", kv.key);
+        kv.key = interp(&kv.key, &field)?;
+        kv.value = interp(&kv.value, &field)?;
     }
     spec.auth = match std::mem::replace(&mut spec.auth, AuthData::None) {
         AuthData::None => AuthData::None,
         AuthData::Basic { username, password } => AuthData::Basic {
-            username: interp(&username)?,
-            password: interp(&password)?,
+            username: interp(&username, "auth")?,
+            password: interp(&password, "auth")?,
         },
         AuthData::Bearer { token } => AuthData::Bearer {
-            token: interp(&token)?,
+            token: interp(&token, "auth")?,
         },
         AuthData::Apikey { key, value, add_to } => AuthData::Apikey {
-            key: interp(&key)?,
-            value: interp(&value)?,
+            key: interp(&key, "auth")?,
+            value: interp(&value, "auth")?,
             add_to,
         },
     };
@@ -323,7 +327,50 @@ mod tests {
     fn apply_env_unknown_var_fails_before_send() {
         let mut s = spec("https://{{host}}/x");
         let err = apply_env(&mut s, &test_env(&[])).unwrap_err();
-        assert!(err.contains("undefined variable: {{host}}"));
+        assert_eq!(err, "undefined variable: {{host}} in URL");
+    }
+
+    #[test]
+    fn apply_env_unknown_var_in_header_names_the_header() {
+        let mut s = spec("https://api.dev");
+        s.headers = vec![kv("X-Token", "{{tok}}", true)];
+        let err = apply_env(&mut s, &test_env(&[])).unwrap_err();
+        assert_eq!(err, "undefined variable: {{tok}} in header \"X-Token\"");
+    }
+
+    #[test]
+    fn apply_env_unknown_var_in_query_param_names_the_param() {
+        let mut s = spec("https://api.dev");
+        s.params = vec![kv("q", "{{term}}", true)];
+        let err = apply_env(&mut s, &test_env(&[])).unwrap_err();
+        assert_eq!(err, "undefined variable: {{term}} in query param \"q\"");
+    }
+
+    #[test]
+    fn apply_env_unknown_var_in_body_names_body() {
+        let mut s = spec("https://api.dev");
+        s.body.json = "{{missing}}".into();
+        let err = apply_env(&mut s, &test_env(&[])).unwrap_err();
+        assert_eq!(err, "undefined variable: {{missing}} in body");
+    }
+
+    #[test]
+    fn apply_env_unknown_var_in_form_field_names_the_field() {
+        let mut s = spec("https://api.dev");
+        s.body.mode = "form-urlencoded".into();
+        s.body.form = vec![kv("user", "{{u}}", true)];
+        let err = apply_env(&mut s, &test_env(&[])).unwrap_err();
+        assert_eq!(err, "undefined variable: {{u}} in form field \"user\"");
+    }
+
+    #[test]
+    fn apply_env_unknown_var_in_auth_names_auth() {
+        let mut s = spec("https://api.dev");
+        s.auth = AuthData::Bearer {
+            token: "{{tok}}".into(),
+        };
+        let err = apply_env(&mut s, &test_env(&[])).unwrap_err();
+        assert_eq!(err, "undefined variable: {{tok}} in auth");
     }
 
     /// Case-insensitive header lookup, mirroring `HeaderMap::get`.

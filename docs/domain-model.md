@@ -186,7 +186,7 @@ it fails, returns the issues and does not send.
 leaf values.
 
 ```rust
-pub struct Environment { pub name: String, pub vars: BTreeMap<String, String> }
+pub struct Environment { pub id: String, pub name: String, pub variables: BTreeMap<String, String> }
 
 /// Substitutes {{key}} with values from the environment. Missing variable -> DomainError::UnknownVar.
 pub fn interpolate(template: &str, env: &Environment) -> Result<String, DomainError>;

@@ -30,7 +30,14 @@ pub fn list_environments(data_dir: &Path, workspace_id: &str) -> anyhow::Result<
     let root = environments_root(data_dir, workspace_id);
     let entries = match fs::read_dir(&root) {
         Ok(entries) => entries,
-        Err(_) => return Ok(out), // no dir yet = no environments
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(out), // no dir yet = no environments
+        Err(e) => {
+            // Any other read_dir failure (permissions, not-a-directory, ...) must NOT
+            // read as "empty" — the frontend seeds on empty+no-errors, so silently
+            // returning Ok(empty) here would trigger unwanted seed writes.
+            out.errors.push(format!("environments: {e}"));
+            return Ok(out);
+        }
     };
     for entry in entries {
         let path = entry?.path();
@@ -131,6 +138,23 @@ mod tests {
         let out = list_environments(&dir, "ws").unwrap();
         assert!(out.environments.is_empty());
         assert!(out.errors.is_empty());
+    }
+
+    #[test]
+    fn list_reports_error_when_environments_path_is_not_a_directory() {
+        // A non-NotFound read_dir failure (here: a file sits where the directory
+        // should be) must surface as an error, not be treated as "no environments
+        // yet" — otherwise the frontend's empty+no-errors seed guard would fire.
+        let dir = setup("not-a-directory");
+        let ws_root = dir.join("workspaces").join("ws");
+        fs::create_dir_all(&ws_root).unwrap();
+        fs::write(ws_root.join("environments"), "not a directory").unwrap();
+
+        let out = list_environments(&dir, "ws").unwrap();
+
+        assert!(out.environments.is_empty());
+        assert_eq!(out.errors.len(), 1);
+        assert!(out.errors[0].starts_with("environments:"));
     }
 
     #[test]

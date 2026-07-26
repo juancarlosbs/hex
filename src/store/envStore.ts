@@ -16,7 +16,19 @@ interface EnvState {
   updateVariables: (id: string, vars: Record<string, string>) => Promise<void>;
 }
 
-const SEED_NAMES = ["Development", "Staging", "Production"];
+// Fixed ids (not crypto.randomUUID()) so a double-seed — e.g. React StrictMode
+// mounting the loading effect twice — converges to the same 3 files instead of 6:
+// save_environment overwrites by id.
+const SEEDS = [
+  { id: "development", name: "Development" },
+  { id: "staging", name: "Staging" },
+  { id: "production", name: "Production" },
+];
+
+// Bumped on every load() call; a load only commits its result if it is still
+// the most recent one when its async work finishes, so a slow load for a
+// stale workspace can never clobber a newer one.
+let loadToken = 0;
 
 export const useEnvStore = create<EnvState>((set, get) => ({
   environments: [],
@@ -25,17 +37,19 @@ export const useEnvStore = create<EnvState>((set, get) => ({
   workspaceId: null,
 
   async load(workspaceId) {
+    const token = ++loadToken;
     let { environments, errors } = await api.listEnvironments(workspaceId);
     if (environments.length === 0 && errors.length === 0) {
       // first run in this workspace: seed the standard three
-      for (const name of SEED_NAMES) {
-        await api.saveEnvironment(workspaceId, { id: crypto.randomUUID(), name, variables: {} });
+      for (const { id, name } of SEEDS) {
+        await api.saveEnvironment(workspaceId, { id, name, variables: {} });
       }
       ({ environments, errors } = await api.listEnvironments(workspaceId));
     }
     const store = await getStore();
     const saved = await store.get<string | null>(`activeEnv:${workspaceId}`);
     const activeId = environments.some((e) => e.id === saved) ? (saved as string) : null;
+    if (token !== loadToken) return; // superseded by a newer load
     set({ environments, loadErrors: errors, workspaceId, activeId });
   },
 

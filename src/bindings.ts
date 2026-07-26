@@ -217,7 +217,7 @@ status: number | null; durationMs: number | null; sizeBytes: number | null; erro
 /**
  * What was sent — enough to restore the request in the editor.
  */
-export type HistorySpec = { kind: "rest"; spec: SendSpec } | { kind: "soap"; wsdl_url: string; input_element: QName; endpoint: string; soap_action: string; soap_version: string; value: FormValue } | { kind: "soapRaw"; endpoint: string; envelope: string; soap_action: string; soap_version: string }
+export type HistorySpec = { kind: "rest"; spec: SendSpec } | { kind: "soap"; wsdlUrl: string; inputElement: QName; endpoint: string; soapAction: string; soapVersion: string; value: FormValue } | { kind: "soapRaw"; endpoint: string; envelope: string; soapAction: string; soapVersion: string }
 export type HttpResponse = { status: number; statusText: string; timeMs: number; sizeBytes: number; headers: Partial<{ [key in string]: string }>; body: string; timing: TimingBreakdown; fault: SoapFault | null; 
 /**
  * True when a history entry's body was cut at 1 MB before storing.

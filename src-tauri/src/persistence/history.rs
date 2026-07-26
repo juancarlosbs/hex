@@ -11,15 +11,12 @@ const MAX_BODY_BYTES: usize = 1_048_576; // 1 MB
 
 /// What was sent — enough to restore the request in the editor.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
-#[serde(
-    tag = "kind",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum HistorySpec {
     Rest {
         spec: SendSpec,
     },
+    #[serde(rename_all = "camelCase")]
     Soap {
         wsdl_url: String,
         input_element: QName,
@@ -28,6 +25,7 @@ pub enum HistorySpec {
         soap_version: String,
         value: FormValue,
     },
+    #[serde(rename_all = "camelCase")]
     SoapRaw {
         endpoint: String,
         envelope: String,

@@ -430,12 +430,8 @@ pub fn reorder_children(
 
 use crate::domain::wsdl::{DefinitionDiff, OperationRef, QName, SoapVersion};
 
-// Task 3 wires soap_snapshot/apply_definition_update into a command; until
-// then nothing outside tests calls into this section.
-#[allow(dead_code)]
 const ORPHANS_FOLDER_NAME: &str = "Orphans";
 
-#[allow(dead_code)]
 fn soap_version_str(v: SoapVersion) -> &'static str {
     match v {
         SoapVersion::V11 => "1.1",
@@ -445,7 +441,6 @@ fn soap_version_str(v: SoapVersion) -> &'static str {
 
 /// RequestKind for a fresh operation. Also used to refresh a stale request's
 /// metadata: everything the WSDL owns comes from `op`, orphan is cleared.
-#[allow(dead_code)]
 pub fn soap_kind(wsdl_url: &str, op: &OperationRef) -> RequestKind {
     RequestKind::Soap {
         wsdl_url: wsdl_url.to_string(),
@@ -460,7 +455,6 @@ pub fn soap_kind(wsdl_url: &str, op: &OperationRef) -> RequestKind {
 
 /// OperationRef as saved on disk. Missing optional metadata (pre-slice files)
 /// becomes empty defaults so the diff flags the operation as changed.
-#[allow(dead_code)]
 fn saved_operation_ref(kind: &RequestKind) -> Option<OperationRef> {
     let RequestKind::Soap {
         operation,
@@ -490,7 +484,6 @@ fn saved_operation_ref(kind: &RequestKind) -> Option<OperationRef> {
 
 /// Recursively collect SOAP requests under `dir` as (id path relative to the
 /// collection root, file). `skip` omits one direct child of the root (Orphans).
-#[allow(dead_code)]
 fn collect_soap_requests(
     dir: &Path,
     prefix: &[String],
@@ -517,7 +510,6 @@ fn collect_soap_requests(
     Ok(out)
 }
 
-#[allow(dead_code)]
 fn find_by_operation<'a>(
     reqs: &'a [(Vec<String>, RequestFile)],
     name: &str,
@@ -527,7 +519,6 @@ fn find_by_operation<'a>(
     )
 }
 
-#[allow(dead_code)]
 fn find_orphans_folder(col_dir: &Path) -> anyhow::Result<Option<String>> {
     let meta = read_folder_meta(col_dir)?;
     for id in &meta.children_order {
@@ -541,7 +532,6 @@ fn find_orphans_folder(col_dir: &Path) -> anyhow::Result<Option<String>> {
 
 /// Move a request file to another folder of the same collection, rewriting it
 /// with `rf` and keeping both children_order metas consistent.
-#[allow(dead_code)]
 fn move_request(
     col_dir: &Path,
     from: &[String],
@@ -566,7 +556,6 @@ fn move_request(
 
 /// wsdl_url + saved operation snapshot of an imported collection. Requests in
 /// the Orphans folder don't count as current operations.
-#[allow(dead_code)]
 pub fn soap_snapshot(
     data_dir: &Path,
     workspace_id: &str,
@@ -593,7 +582,6 @@ pub fn soap_snapshot(
 /// Apply a previewed diff: create new requests (restoring matching orphans),
 /// refresh changed metadata in place, and move removed operations into the
 /// Orphans folder — never delete (product.md F6).
-#[allow(dead_code)]
 pub fn apply_definition_update(
     data_dir: &Path,
     workspace_id: &str,

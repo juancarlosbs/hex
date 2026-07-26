@@ -42,7 +42,6 @@ pub struct DefinitionDiff {
 
 /// Diff by operation name. `changed` carries the fresh `OperationRef` for any
 /// name on both sides whose endpoint/action/version/input differ.
-#[allow(dead_code)]
 pub fn diff_operations(current: &[OperationRef], fresh: &[OperationRef]) -> DefinitionDiff {
     let mut diff = DefinitionDiff {
         new: vec![],

@@ -152,6 +152,29 @@ async parseEnvelope(envelope: string, schema: SchemaNode) : Promise<Result<FormV
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Update Definition (product.md F6), preview half: re-fetch the collection's
+ * WSDL through the same pipeline as import and diff against what's saved.
+ */
+async previewDefinitionUpdate(workspaceId: string, collectionId: string) : Promise<Result<DefinitionUpdatePreview, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("preview_definition_update", { workspaceId, collectionId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Update Definition (product.md F6), apply half: persist a previewed diff.
+ */
+async applyDefinitionUpdate(workspaceId: string, collectionId: string, preview: DefinitionUpdatePreview) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("apply_definition_update", { workspaceId, collectionId, preview }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -169,6 +192,28 @@ export type Attribute = { name: string; xsdType: XsdType; required: boolean; enu
 export type AuthData = { type: "none" } | { type: "basic"; username: string; password: string } | { type: "bearer"; token: string } | { type: "apikey"; key: string; value: string; addTo: string }
 export type BodyData = { mode: string; json: string; form: KeyValueEntry[] }
 export type CollectionNode = { type: "folder"; id: string; name: string; children: CollectionNode[] } | ({ type: "request" } & RequestNode)
+/**
+ * Result of diffing a re-fetched WSDL's operations against the imported ones
+ * (product.md F6). Pure data — applying it lives in persistence.
+ */
+export type DefinitionDiff = { 
+/**
+ * Operations present in the fresh WSDL but not imported yet.
+ */
+new: OperationRef[]; 
+/**
+ * Fresh version of operations whose metadata differs from the saved one.
+ */
+changed: OperationRef[]; 
+/**
+ * Names of imported operations that no longer exist in the fresh WSDL.
+ */
+removed: string[]; 
+/**
+ * Operations present on both sides with identical metadata.
+ */
+unchanged: number }
+export type DefinitionUpdatePreview = { serviceName: string; wsdlUrl: string; diff: DefinitionDiff }
 /**
  * The instance the user filled in. Mirrors `NodeKind`; the serializer walks the
  * pair (SchemaNode, FormValue). See docs/domain-model.md §3.

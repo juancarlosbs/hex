@@ -145,34 +145,91 @@ async fn fetch_text(client: &reqwest::Client, url: &str) -> Result<String, Strin
     resp.text().await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn import_wsdl(url: String) -> Result<WsdlImportPreview, String> {
+/// Shared F2 pipeline: fetch the WSDL, parse it, and resolve the full schema
+/// closure up front so failures name WHICH url failed and why — never a
+/// silent partial import. Used by import and Update Definition (F6).
+async fn fetch_parse_resolve(url: &str) -> Result<wsdl::parse::WsdlDocument, String> {
     let client = http_client()?;
     let fetch = |u: String| {
         let client = client.clone();
         async move { fetch_text(&client, &u).await }
     };
-
-    let xml = fetch(url.clone()).await.map_err(|message| {
+    let xml = fetch(url.to_string()).await.map_err(|message| {
         wsdl::error::WsdlError::Fetch {
-            url: url.clone(),
+            url: url.to_string(),
             message,
         }
         .to_string()
     })?;
-    let parsed = wsdl::parse::parse(&url, &xml).map_err(|e| e.to_string())?;
-    // SchemaSet discarded in slice 1: resolve runs to validate the full schema
-    // closure up front; slice 2 (xsd -> SchemaNode) consumes it.
-    wsdl::resolve::resolve(&url, &xml, fetch)
+    let parsed = wsdl::parse::parse(url, &xml).map_err(|e| e.to_string())?;
+    // SchemaSet discarded here: resolve runs to validate the full schema
+    // closure up front; get_operation_schema/send_soap rebuild it on demand.
+    wsdl::resolve::resolve(url, &xml, fetch)
         .await
         .map_err(|e| e.to_string())?;
+    Ok(parsed)
+}
 
+#[tauri::command]
+#[specta::specta]
+pub async fn import_wsdl(url: String) -> Result<WsdlImportPreview, String> {
+    let parsed = fetch_parse_resolve(&url).await?;
     Ok(WsdlImportPreview {
         service_name: parsed.service_name,
         wsdl_url: url,
         operations: parsed.operations,
     })
+}
+
+use crate::domain::wsdl::{diff_operations, DefinitionDiff};
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DefinitionUpdatePreview {
+    pub service_name: String,
+    pub wsdl_url: String,
+    pub diff: DefinitionDiff,
+}
+
+/// Update Definition (product.md F6), preview half: re-fetch the collection's
+/// WSDL through the same pipeline as import and diff against what's saved.
+#[tauri::command]
+#[specta::specta]
+pub async fn preview_definition_update(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    collection_id: String,
+) -> Result<DefinitionUpdatePreview, String> {
+    let dir = data_dir(&app)?;
+    let (wsdl_url, current) = collection::soap_snapshot(&dir, &workspace_id, &collection_id)
+        .map_err(|e| e.to_string())?;
+    let parsed = fetch_parse_resolve(&wsdl_url).await?;
+    let diff = diff_operations(&current, &parsed.operations);
+    Ok(DefinitionUpdatePreview {
+        service_name: parsed.service_name,
+        wsdl_url,
+        diff,
+    })
+}
+
+/// Update Definition (product.md F6), apply half: persist a previewed diff.
+#[tauri::command]
+#[specta::specta]
+pub fn apply_definition_update(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    collection_id: String,
+    preview: DefinitionUpdatePreview,
+) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    collection::apply_definition_update(
+        &dir,
+        &workspace_id,
+        &collection_id,
+        &preview.wsdl_url,
+        &preview.diff,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

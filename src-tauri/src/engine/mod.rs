@@ -130,6 +130,49 @@ fn build_request(spec: &SendSpec) -> Result<BuiltRequest, String> {
     Ok((spec.method.clone(), url, headers, body))
 }
 
+/// Interpolates {{var}} in everything that leaves on the wire: URL, enabled
+/// params/headers, body, auth. Disabled entries stay untouched — they are not sent.
+/// Runs BEFORE build_request, so auth/body defaults see final values.
+pub fn apply_env(
+    spec: &mut SendSpec,
+    environment: &crate::domain::env::Environment,
+) -> Result<(), String> {
+    let interp =
+        |s: &str| crate::domain::env::interpolate(s, environment).map_err(|e| e.to_string());
+
+    spec.url = interp(&spec.url)?;
+    for kv in spec
+        .params
+        .iter_mut()
+        .chain(spec.headers.iter_mut())
+        .filter(|kv| kv.enabled)
+    {
+        kv.key = interp(&kv.key)?;
+        kv.value = interp(&kv.value)?;
+    }
+    spec.body.json = interp(&spec.body.json)?;
+    for kv in spec.body.form.iter_mut().filter(|kv| kv.enabled) {
+        kv.key = interp(&kv.key)?;
+        kv.value = interp(&kv.value)?;
+    }
+    spec.auth = match std::mem::replace(&mut spec.auth, AuthData::None) {
+        AuthData::None => AuthData::None,
+        AuthData::Basic { username, password } => AuthData::Basic {
+            username: interp(&username)?,
+            password: interp(&password)?,
+        },
+        AuthData::Bearer { token } => AuthData::Bearer {
+            token: interp(&token)?,
+        },
+        AuthData::Apikey { key, value, add_to } => AuthData::Apikey {
+            key: interp(&key)?,
+            value: interp(&value)?,
+            add_to,
+        },
+    };
+    Ok(())
+}
+
 fn to_http_response(raw: connector::RawResponse) -> HttpResponse {
     let mut headers: HashMap<String, String> = HashMap::new();
     for (name, value) in raw.headers {
@@ -225,8 +268,62 @@ mod tests {
         }
     }
 
+    fn test_env(pairs: &[(&str, &str)]) -> crate::domain::env::Environment {
+        crate::domain::env::Environment {
+            id: "e1".into(),
+            name: "Dev".into(),
+            variables: pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        }
+    }
+
     pub fn build(spec: &SendSpec) -> Result<BuiltRequest, String> {
         build_request(spec)
+    }
+
+    #[test]
+    fn apply_env_interpolates_url_params_headers_and_json_body() {
+        let mut s = spec("https://{{host}}/items");
+        s.params = vec![kv("q", "{{term}}", true)];
+        s.headers = vec![kv("X-Token", "{{tok}}", true)];
+        s.body.json = r#"{"h":"{{host}}"}"#.into();
+        let e = test_env(&[("host", "api.dev"), ("term", "witch"), ("tok", "t1")]);
+        apply_env(&mut s, &e).unwrap();
+        assert_eq!(s.url, "https://api.dev/items");
+        assert_eq!(s.params[0].value, "witch");
+        assert_eq!(s.headers[0].value, "t1");
+        assert_eq!(s.body.json, r#"{"h":"api.dev"}"#);
+    }
+
+    #[test]
+    fn apply_env_interpolates_form_body_and_auth() {
+        let mut s = spec("https://api.dev");
+        s.body.mode = "form-urlencoded".into();
+        s.body.form = vec![kv("user", "{{u}}", true)];
+        s.auth = AuthData::Bearer {
+            token: "{{tok}}".into(),
+        };
+        let e = test_env(&[("u", "ada"), ("tok", "t1")]);
+        apply_env(&mut s, &e).unwrap();
+        assert_eq!(s.body.form[0].value, "ada");
+        assert!(matches!(&s.auth, AuthData::Bearer { token } if token == "t1"));
+    }
+
+    #[test]
+    fn apply_env_skips_disabled_entries() {
+        let mut s = spec("https://api.dev");
+        s.headers = vec![kv("X-Off", "{{missing}}", false)];
+        apply_env(&mut s, &test_env(&[])).unwrap();
+        assert_eq!(s.headers[0].value, "{{missing}}");
+    }
+
+    #[test]
+    fn apply_env_unknown_var_fails_before_send() {
+        let mut s = spec("https://{{host}}/x");
+        let err = apply_env(&mut s, &test_env(&[])).unwrap_err();
+        assert!(err.contains("undefined variable: {{host}}"));
     }
 
     /// Case-insensitive header lookup, mirroring `HeaderMap::get`.

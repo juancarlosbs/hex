@@ -425,8 +425,9 @@ export const CollectionTree = forwardRef<CollectionTreeHandle, { workspaceId: st
         ids.splice(proj.index, 0, item.id);
         reorder(workspaceId, proj.parentPath, ids);
       } else {
-        move(workspaceId, [...item.parentPath, item.id], proj.parentPath, proj.index);
-        updatePathsUnder([...item.parentPath, item.id], [...proj.parentPath, item.id]);
+        move(workspaceId, [...item.parentPath, item.id], proj.parentPath, proj.index).then((ok) => {
+          if (ok) updatePathsUnder([...item.parentPath, item.id], [...proj.parentPath, item.id]);
+        });
       }
     }
 

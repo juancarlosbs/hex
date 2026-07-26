@@ -11,7 +11,7 @@ interface CollectionState {
   rename: (workspaceId: string, path: string[], name: string) => Promise<void>;
   remove: (workspaceId: string, path: string[]) => Promise<void>;
   reorder: (workspaceId: string, parentPath: string[], orderedIds: string[]) => Promise<void>;
-  move: (workspaceId: string, fromPath: string[], toParentPath: string[], index: number) => Promise<void>;
+  move: (workspaceId: string, fromPath: string[], toParentPath: string[], index: number) => Promise<boolean>;
   updateRequestMeta: (path: string[], method: string, url: string) => void;
   setActiveRequest: (id: string | null) => void;
 }
@@ -92,9 +92,11 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     set((s) => ({ collections: moveInTree(s.collections, fromPath, toParentPath, index) }));
     try {
       await api.moveNode(workspaceId, fromPath, toParentPath, index);
+      return true;
     } catch (e) {
       console.error("move failed:", e);
       set({ collections: prev });
+      return false;
     }
   },
 

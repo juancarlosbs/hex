@@ -1,6 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { CollectionNode } from "../lib/api";
-import { moveInTree } from "./collectionStore";
+import { moveInTree, useCollectionStore } from "./collectionStore";
+import { api } from "../lib/api";
+
+vi.mock("../lib/api", () => ({
+  api: {
+    moveNode: vi.fn(),
+  },
+}));
 
 const req = (id: string): CollectionNode => ({
   type: "request",
@@ -56,5 +63,29 @@ describe("moveInTree", () => {
     const before = JSON.stringify(tree);
     moveInTree(tree, ["col", "f1", "r1"], ["col", "f2"], 0);
     expect(JSON.stringify(tree)).toBe(before);
+  });
+});
+
+describe("move action", () => {
+  it("returns false and rolls back collections when api.moveNode rejects", async () => {
+    useCollectionStore.setState({ collections: tree });
+    vi.mocked(api.moveNode).mockRejectedValueOnce(new Error("nope"));
+
+    const ok = await useCollectionStore.getState().move("ws1", ["col", "f1", "r1"], ["col", "f2"], 0);
+
+    expect(ok).toBe(false);
+    expect(useCollectionStore.getState().collections).toEqual(tree);
+  });
+
+  it("returns true and keeps the moved tree when api.moveNode resolves", async () => {
+    useCollectionStore.setState({ collections: tree });
+    vi.mocked(api.moveNode).mockResolvedValueOnce(null);
+
+    const ok = await useCollectionStore.getState().move("ws1", ["col", "f1", "r1"], ["col", "f2"], 0);
+
+    expect(ok).toBe(true);
+    const state = useCollectionStore.getState();
+    expect(childIds(state.collections, ["col", "f1"])).toEqual(["r2"]);
+    expect(childIds(state.collections, ["col", "f2"])).toEqual(["r1", "r3"]);
   });
 });

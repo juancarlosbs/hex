@@ -358,3 +358,32 @@ pub async fn send_soap_raw(
     record_history(&app, request_id, snapshot, &result);
     result
 }
+
+#[tauri::command]
+#[specta::specta]
+pub fn list_history(
+    app: tauri::AppHandle,
+    request_id: String,
+) -> Result<Vec<crate::persistence::history::HistoryEntrySummary>, String> {
+    let dir = data_dir(&app)?;
+    crate::persistence::history::list(&dir.join("history.db"), &request_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_history_entry(
+    app: tauri::AppHandle,
+    entry_id: i64,
+) -> Result<crate::persistence::history::HistoryEntry, String> {
+    let dir = data_dir(&app)?;
+    crate::persistence::history::get(&dir.join("history.db"), entry_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn clear_history(app: tauri::AppHandle, request_id: String) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    crate::persistence::history::clear(&dir.join("history.db"), &request_id)
+        .map_err(|e| e.to_string())
+}

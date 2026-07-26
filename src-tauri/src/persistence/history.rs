@@ -156,7 +156,6 @@ pub fn append(
 }
 
 /// Newest first. Missing DB or no rows → empty, not an error.
-#[allow(dead_code)]
 pub fn list(db: &Path, request_id: &str) -> anyhow::Result<Vec<HistoryEntrySummary>> {
     let conn = open(db)?;
     let mut stmt = conn.prepare(
@@ -177,7 +176,6 @@ pub fn list(db: &Path, request_id: &str) -> anyhow::Result<Vec<HistoryEntrySumma
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
-#[allow(dead_code)]
 pub fn get(db: &Path, entry_id: i64) -> anyhow::Result<HistoryEntry> {
     let conn = open(db)?;
     let (executed_at_ms, spec_json, response_json, error): (
@@ -204,7 +202,6 @@ pub fn get(db: &Path, entry_id: i64) -> anyhow::Result<HistoryEntry> {
     })
 }
 
-#[allow(dead_code)]
 pub fn clear(db: &Path, request_id: &str) -> anyhow::Result<()> {
     let conn = open(db)?;
     conn.execute(

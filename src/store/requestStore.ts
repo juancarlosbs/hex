@@ -25,6 +25,7 @@ interface RequestState {
   saveRequest(id: string): Promise<void>;
   closeRequest(id: string): void;
   closeRequestsUnder(prefix: string[]): void;
+  updatePathsUnder(oldPrefix: string[], newPrefix: string[]): void;
   closeAll(): void;
   setActive(id: string | null): void;
 
@@ -158,6 +159,20 @@ export const useRequestStore = create<RequestState>((set, get) => ({
       return { openRequests, order, activeId };
     });
     removedIds.forEach((rid) => useResponseStore.getState().clear(rid));
+  },
+
+  updatePathsUnder(oldPrefix, newPrefix) {
+    const isUnder = (path: string[]) =>
+      path.length >= oldPrefix.length && oldPrefix.every((v, i) => path[i] === v);
+    set((s) => ({
+      openRequests: Object.fromEntries(
+        Object.entries(s.openRequests).map(([id, r]) =>
+          isUnder(r.path)
+            ? [id, { ...r, path: [...newPrefix, ...r.path.slice(oldPrefix.length)] }]
+            : [id, r]
+        )
+      ),
+    }));
   },
 
   closeAll() {

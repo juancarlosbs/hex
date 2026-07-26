@@ -185,3 +185,25 @@ describe("commitSoapXml", () => {
     expect(soap.value).toEqual({ leaf: "old" });
   });
 });
+
+describe("updatePathsUnder", () => {
+  it("rewrites the path prefix of open requests under the moved node", () => {
+    useRequestStore.setState({
+      openRequests: { r1: makeEmptyRequest("r1", "R1", "GET", ["c1", "f1", "r1"]) },
+      order: ["r1"],
+      activeId: "r1",
+    });
+    useRequestStore.getState().updatePathsUnder(["c1", "f1"], ["c1", "f2", "f1"]);
+    expect(useRequestStore.getState().openRequests.r1.path).toEqual(["c1", "f2", "f1", "r1"]);
+  });
+
+  it("leaves requests outside the prefix untouched", () => {
+    useRequestStore.setState({
+      openRequests: { r1: makeEmptyRequest("r1", "R1", "GET", ["c1", "other", "r1"]) },
+      order: ["r1"],
+      activeId: "r1",
+    });
+    useRequestStore.getState().updatePathsUnder(["c1", "f1"], ["c1", "f2", "f1"]);
+    expect(useRequestStore.getState().openRequests.r1.path).toEqual(["c1", "other", "r1"]);
+  });
+});

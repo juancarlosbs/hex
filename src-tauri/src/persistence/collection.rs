@@ -474,14 +474,20 @@ pub fn move_node(
         return Ok(());
     }
 
+    // Crash-safe ordering: insert into the destination meta, then rename the
+    // file/dir, then remove from the source meta. Every intermediate crash
+    // state renders the node exactly once — a dangling meta entry pointing at
+    // a not-yet-renamed file is harmlessly skipped by `read_folder_children`.
+    let mut to_meta = read_folder_meta(&to_parent)?;
+    let idx = index.min(to_meta.children_order.len());
+    to_meta.children_order.insert(idx, id.clone());
+    write_folder_meta(&to_parent, &to_meta)?;
+
     std::fs::rename(&src, &dst)?;
+
     let mut from_meta = read_folder_meta(&from_parent)?;
     from_meta.children_order.retain(|x| x != &id);
     write_folder_meta(&from_parent, &from_meta)?;
-    let mut to_meta = read_folder_meta(&to_parent)?;
-    let idx = index.min(to_meta.children_order.len());
-    to_meta.children_order.insert(idx, id);
-    write_folder_meta(&to_parent, &to_meta)?;
     Ok(())
 }
 
@@ -1000,6 +1006,26 @@ mod tests {
         .unwrap();
         let b_children = folder_children(&dir, &col_id, &b_id);
         assert_eq!(b_children.len(), 1);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn move_into_nonexistent_destination_is_rejected_and_leaves_source_intact() {
+        let (dir, col_id, a_id, _b_id, req_id) = setup_two_folders("move-no-dest");
+        let err = move_node(
+            &dir,
+            "ws1",
+            vec![col_id.clone(), a_id.clone(), req_id.clone()],
+            vec![col_id.clone(), "does-not-exist".into()],
+            0,
+        );
+        assert!(err.is_err());
+        let a_children = folder_children(&dir, &col_id, &a_id);
+        assert_eq!(a_children.len(), 1);
+        let CollectionNode::Request(RequestNode { id, .. }) = &a_children[0] else {
+            panic!()
+        };
+        assert_eq!(id, &req_id);
         fs::remove_dir_all(dir).unwrap();
     }
 

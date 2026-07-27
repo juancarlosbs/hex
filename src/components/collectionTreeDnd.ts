@@ -109,3 +109,28 @@ export function getProjection(
   }
   return null;
 }
+
+export type DropResolution =
+  | { kind: "reorder"; parentPath: string[]; ids: string[] }
+  | { kind: "move"; fromPath: string[]; toParentPath: string[]; index: number };
+
+/** Decide whether a drop is a same-parent reorder or a cross-parent move. */
+export function resolveDrop(
+  item: FlatItem,
+  proj: Projection,
+  collections: CollectionNode[]
+): DropResolution {
+  if (arraysEqual(item.parentPath, proj.parentPath)) {
+    const ids = childrenOf(collections, proj.parentPath)
+      .map((n) => n.id)
+      .filter((id) => id !== item.id);
+    ids.splice(proj.index, 0, item.id);
+    return { kind: "reorder", parentPath: proj.parentPath, ids };
+  }
+  return {
+    kind: "move",
+    fromPath: [...item.parentPath, item.id],
+    toParentPath: proj.parentPath,
+    index: proj.index,
+  };
+}

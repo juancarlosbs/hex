@@ -20,11 +20,10 @@ import { useRequestStore } from "../store/requestStore";
 import {
   FlatItem,
   INDENT,
-  arraysEqual,
-  childrenOf,
   flattenTree,
   getProjection,
   pendingInsertIndex,
+  resolveDrop,
 } from "./collectionTreeDnd";
 
 const METHOD_COLORS: Record<string, string> = {
@@ -418,15 +417,13 @@ export const CollectionTree = forwardRef<CollectionTreeHandle, { workspaceId: st
       const proj = projected;
       resetDrag();
       if (!item || !proj) return;
-      if (arraysEqual(item.parentPath, proj.parentPath)) {
-        const ids = childrenOf(collections, proj.parentPath)
-          .map((n) => n.id)
-          .filter((id) => id !== item.id);
-        ids.splice(proj.index, 0, item.id);
-        reorder(workspaceId, proj.parentPath, ids);
+      const resolution = resolveDrop(item, proj, collections);
+      if (resolution.kind === "reorder") {
+        reorder(workspaceId, resolution.parentPath, resolution.ids);
       } else {
-        move(workspaceId, [...item.parentPath, item.id], proj.parentPath, proj.index).then((ok) => {
-          if (ok) updatePathsUnder([...item.parentPath, item.id], [...proj.parentPath, item.id]);
+        const { fromPath, toParentPath, index } = resolution;
+        move(workspaceId, fromPath, toParentPath, index).then((ok) => {
+          if (ok) updatePathsUnder(fromPath, [...toParentPath, item.id]);
         });
       }
     }

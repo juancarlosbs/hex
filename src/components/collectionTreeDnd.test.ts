@@ -5,6 +5,7 @@ import {
   getProjection,
   childrenOf,
   pendingInsertIndex,
+  resolveDrop,
 } from "./collectionTreeDnd";
 
 const req = (id: string): CollectionNode => ({
@@ -110,5 +111,30 @@ describe("pendingInsertIndex", () => {
   });
   it("appends at the end for root", () => {
     expect(pendingInsertIndex(flat, [])).toBe(flat.length);
+  });
+});
+
+describe("resolveDrop", () => {
+  const flat = flattenTree(tree, new Set());
+
+  it("resolves a same-parent drop as a reorder with the active id filtered and spliced at the projected index", () => {
+    // r1 and r2 are both children of f1; project r1 to land at index 1 (after r2)
+    const item = flat.find((i) => i.id === "r1")!;
+    const proj = { depth: 2, parentPath: ["col", "f1"], index: 1 };
+    const result = resolveDrop(item, proj, tree);
+    expect(result).toEqual({ kind: "reorder", parentPath: ["col", "f1"], ids: ["r2", "r1"] });
+  });
+
+  it("resolves a cross-parent drop as a move with the full fromPath and exact index", () => {
+    // r1 (child of f1) dropped into f2 at index 1 (after r3)
+    const item = flat.find((i) => i.id === "r1")!;
+    const proj = { depth: 2, parentPath: ["col", "f2"], index: 1 };
+    const result = resolveDrop(item, proj, tree);
+    expect(result).toEqual({
+      kind: "move",
+      fromPath: ["col", "f1", "r1"],
+      toParentPath: ["col", "f2"],
+      index: 1,
+    });
   });
 });

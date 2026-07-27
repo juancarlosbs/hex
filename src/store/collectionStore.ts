@@ -96,6 +96,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     } catch (e) {
       console.error("move failed:", e);
       set({ collections: prev });
+      // partial fs failure may have already moved the node on disk: re-fetch
+      // so the UI converges to reality instead of showing a stale snapshot.
+      await get().load(workspaceId);
       return false;
     }
   },

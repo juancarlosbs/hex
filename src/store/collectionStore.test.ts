@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 vi.mock("../lib/api", () => ({
   api: {
     moveNode: vi.fn(),
+    listCollections: vi.fn(),
   },
 }));
 
@@ -67,14 +68,16 @@ describe("moveInTree", () => {
 });
 
 describe("move action", () => {
-  it("returns false and rolls back collections when api.moveNode rejects", async () => {
+  it("returns false, rolls back collections, and re-fetches from disk when api.moveNode rejects", async () => {
     useCollectionStore.setState({ collections: tree });
     vi.mocked(api.moveNode).mockRejectedValueOnce(new Error("nope"));
+    vi.mocked(api.listCollections).mockResolvedValueOnce(tree);
 
     const ok = await useCollectionStore.getState().move("ws1", ["col", "f1", "r1"], ["col", "f2"], 0);
 
     expect(ok).toBe(false);
     expect(useCollectionStore.getState().collections).toEqual(tree);
+    expect(api.listCollections).toHaveBeenCalledWith("ws1");
   });
 
   it("returns true and keeps the moved tree when api.moveNode resolves", async () => {

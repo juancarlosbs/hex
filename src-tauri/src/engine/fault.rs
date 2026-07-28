@@ -1,7 +1,7 @@
 use roxmltree::Document;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, specta::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SoapFault {
     pub code: String,

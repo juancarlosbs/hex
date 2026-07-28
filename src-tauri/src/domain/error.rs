@@ -4,4 +4,6 @@ use thiserror::Error;
 pub enum DomainError {
     #[error("value does not match schema at {path}")]
     ValueMismatch { path: String },
+    #[error("undefined variable: {{{{{0}}}}}")]
+    UnknownVar(String),
 }

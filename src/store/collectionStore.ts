@@ -10,6 +10,7 @@ interface CollectionState {
   addRequest: (workspaceId: string, parentPath: string[], name: string, kind: RequestKind) => Promise<CollectionNode | null>;
   rename: (workspaceId: string, path: string[], name: string) => Promise<void>;
   remove: (workspaceId: string, path: string[]) => Promise<void>;
+  duplicate: (workspaceId: string, path: string[]) => Promise<void>;
   reorder: (workspaceId: string, parentPath: string[], orderedIds: string[]) => Promise<void>;
   move: (workspaceId: string, fromPath: string[], toParentPath: string[], index: number) => Promise<boolean>;
   updateRequestMeta: (path: string[], method: string, url: string) => void;
@@ -73,6 +74,15 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     } catch (e) {
       console.error("delete failed:", e);
       set({ collections: prev });
+    }
+  },
+
+  async duplicate(workspaceId, path) {
+    try {
+      const node = await api.duplicateNode(workspaceId, path);
+      set((s) => ({ collections: insertAfter(s.collections, path, node) }));
+    } catch (e) {
+      console.error("duplicate failed:", e);
     }
   },
 
@@ -195,5 +205,17 @@ function insertNodeAt(
   return tree.map((n) => {
     if (n.type !== "folder" || n.id !== parentPath[0]) return n;
     return { ...n, children: insertNodeAt(n.children, parentPath.slice(1), node, index) };
+  });
+}
+
+function insertAfter(tree: CollectionNode[], path: string[], node: CollectionNode): CollectionNode[] {
+  if (path.length === 1) {
+    const i = tree.findIndex((n) => n.id === path[0]);
+    if (i === -1) return [...tree, node];
+    return [...tree.slice(0, i + 1), node, ...tree.slice(i + 1)];
+  }
+  return tree.map((n) => {
+    if (n.type !== "folder" || n.id !== path[0]) return n;
+    return { ...n, children: insertAfter(n.children, path.slice(1), node) };
   });
 }

@@ -38,8 +38,9 @@ wsdl/              # parsing pipeline (input port)
   parse.rs          # WSDL traversal (roxmltree): service/binding/portType/operations
   resolve.rs        # transitive resolution of import/include (fetch of external schemas)
   xsd.rs            # XSD -> SchemaNode (ADR-010 subset)
-persistence/       # collections/history (serde + fs)
+persistence/       # collections/environments/history (serde + fs)
   collection.rs     # 1 file per request (YAML/TOML); tree <-> disk
+  environment.rs    # 1 TOML per environment per workspace
   history.rs        # execution history (optional SQLite; separate from collections)
 commands/          # #[tauri::command] THIN handlers — validate and delegate, no logic
   mod.rs            # send_request, import_wsdl, create_workspace, save_request, ...
@@ -63,7 +64,7 @@ features/
 components/
   titlebar/  sidebar/  request/  response/  ui/   # ui/ = shadcn
 hooks/
-styles/tokens.css    # shadcn + semantic variables (single source of color)
+App.css              # shadcn + semantic variables (single source of color and tokens)
 ```
 
 ---
@@ -84,7 +85,7 @@ Contracts per layer:
 - **`domain/`** — only types and pure functions. Zero `tokio`, `reqwest`, `std::fs`, `tauri`. If it needs I/O, it's not domain.
 - **`engine/`** — receives a `RequestModel`/`Envelope` from the domain, does the network call, returns `ResponseData`. The only place that speaks hyper/rustls.
 - **`wsdl/`** — receives URL/bytes, returns `Vec<Operation>` where each `Operation` carries a `SchemaNode`. The only place that resolves external schemas.
-- **`persistence/`** — serializes/deserializes collections and history. The only place that touches the data filesystem.
+- **`persistence/`** — serializes/deserializes collections, environments, and history. The only place that touches the data filesystem.
 - **`commands/`** — translates IPC <-> domain. Validates input, calls the right layer, maps errors to responses. **No business logic.**
 - **React** — consumes `bindings.ts` via `lib/api.ts`. Components never call `invoke` with a bare string.
 
@@ -137,7 +138,7 @@ Single IPC return serves the common case. For large responses, the `engine` emit
 - Business logic in `commands/` or React components.
 - `fetch`/XHR in the frontend for external APIs (ADR-004).
 - `std::fs`/network in `domain/`.
-- Hardcoded color in a component (only `styles/tokens.css`).
+- Hardcoded color in a component (only `src/App.css`).
 - `invoke("string", ...)` outside of `lib/api.ts`.
 - Editing `bindings.ts` manually (it's generated).
 

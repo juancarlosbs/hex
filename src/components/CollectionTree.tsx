@@ -38,6 +38,7 @@ const METHOD_COLORS: Record<string, string> = {
 
 type MenuAction =
   | { type: "rename"; path: string[]; currentName: string }
+  | { type: "duplicate"; path: string[] }
   | { type: "delete"; path: string[] }
   | { type: "newFolder"; parentPath: string[] }
   | { type: "newRequest"; parentPath: string[] };
@@ -67,6 +68,7 @@ function ContextMenu({
 
   const label = (a: MenuAction) => {
     if (a.type === "rename") return "Rename";
+    if (a.type === "duplicate") return "Duplicate";
     if (a.type === "delete") return "Delete";
     if (a.type === "newFolder") return "New Folder";
     return "New Request";
@@ -87,6 +89,65 @@ function ContextMenu({
           {label(a)}
         </button>
       ))}
+    </div>
+  );
+}
+
+// ── Confirm delete modal ──────────────────────────────────────────────────
+
+function ConfirmDeleteModal({
+  name,
+  onConfirm,
+  onCancel,
+}: {
+  name: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    cancelRef.current?.focus();
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onCancel();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onCancel]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <div className="w-[360px] rounded-[6px] bg-card border border-border overflow-hidden">
+        <div className="px-5 pt-4 pb-2">
+          <span className="text-[15px] font-semibold text-foreground">Delete '{name}'?</span>
+        </div>
+        <div className="px-5 pb-4 text-[13px] text-muted">This action cannot be undone.</div>
+        <div className="h-px bg-border" />
+        <div className="flex items-center justify-end gap-[10px] px-5 py-[14px]">
+          <button
+            ref={cancelRef}
+            className="px-4 py-[7px] rounded-[4px] text-[13px] font-medium text-foreground bg-secondary border border-border hover:bg-secondary/80 cursor-pointer"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+          <button
+            className="px-4 py-[7px] rounded-[4px] text-[13px] font-medium text-background bg-destructive hover:bg-destructive/90 cursor-pointer"
+            onClick={onConfirm}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -212,9 +273,11 @@ function SortableRow({
   const { node, parentPath } = item;
   const path = [...parentPath, node.id];
   const [renaming, setRenaming] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const rename = useCollectionStore((s) => s.rename);
   const remove = useCollectionStore((s) => s.remove);
+  const duplicate = useCollectionStore((s) => s.duplicate);
   const activeRequestId = useCollectionStore((s) => s.activeRequestId);
   const setActive = useCollectionStore((s) => s.setActiveRequest);
   const openInStore = useRequestStore((s) => s.openRequest);
@@ -233,11 +296,8 @@ function SortableRow({
 
   function handleAction(a: MenuAction) {
     if (a.type === "rename") setRenaming(true);
-    if (a.type === "delete") {
-      remove(workspaceId, path);
-      if (node.type === "folder") closeRequestsUnder(path);
-      else closeInStore(node.id);
-    }
+    if (a.type === "duplicate") duplicate(workspaceId, path);
+    if (a.type === "delete") setConfirmingDelete(true);
     if (a.type === "newFolder") onPendingCreate(path, "folder");
     if (a.type === "newRequest") onPendingCreate(path, "request");
   }
@@ -247,6 +307,7 @@ function SortableRow({
       { type: "newRequest", parentPath: path },
       { type: "newFolder", parentPath: path },
       { type: "rename", path, currentName: node.name },
+      { type: "duplicate", path },
       { type: "delete", path },
     ];
     return (
@@ -283,6 +344,17 @@ function SortableRow({
         {menu && (
           <ContextMenu x={menu.x} y={menu.y} actions={menuActions} onAction={handleAction} onClose={() => setMenu(null)} />
         )}
+        {confirmingDelete && (
+          <ConfirmDeleteModal
+            name={node.name}
+            onConfirm={() => {
+              remove(workspaceId, path);
+              closeRequestsUnder(path);
+              setConfirmingDelete(false);
+            }}
+            onCancel={() => setConfirmingDelete(false)}
+          />
+        )}
       </div>
     );
   }
@@ -291,6 +363,7 @@ function SortableRow({
   const isSoap = node.kind === "soap";
   const menuActions: MenuAction[] = [
     { type: "rename", path, currentName: node.name },
+    { type: "duplicate", path },
     { type: "delete", path },
   ];
 
@@ -341,6 +414,17 @@ function SortableRow({
       </div>
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} actions={menuActions} onAction={handleAction} onClose={() => setMenu(null)} />
+      )}
+      {confirmingDelete && (
+        <ConfirmDeleteModal
+          name={node.name}
+          onConfirm={() => {
+            remove(workspaceId, path);
+            closeInStore(node.id);
+            setConfirmingDelete(false);
+          }}
+          onCancel={() => setConfirmingDelete(false)}
+        />
       )}
     </div>
   );

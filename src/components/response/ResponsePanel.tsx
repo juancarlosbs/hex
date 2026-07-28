@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Loader2, CircleAlert } from "lucide-react";
 import { HttpResponse, ResponseBodyView as BodyViewKind, ResponseTab } from "../../lib/response-types";
 import { ResponsePlaceholder } from "./ResponsePlaceholder";
@@ -10,22 +10,44 @@ import { ResponseBodyView as BodyView } from "./body/ResponseBodyView";
 import { Waterfall } from "./Waterfall";
 import { useRequestStore } from "../../store/requestStore";
 import { useResponseStore } from "../../store/responseStore";
+import { useHistoryStore } from "../../store/historyStore";
 
 export function ResponsePanel() {
   const activeId = useRequestStore((s) => s.activeId);
   const entry = useResponseStore((s) => (activeId ? s.responses[activeId] : undefined));
+  const viewing = useHistoryStore((s) => (activeId ? s.viewing[activeId] : undefined));
+  const backToLive = useHistoryStore((s) => s.backToLive);
   const [activeTab, setActiveTab] = useState<ResponseTab>("body");
   const [bodyView, setBodyView] = useState<BodyViewKind>("tree");
   const [filter, setFilter] = useState("");
 
-  if (!entry) return <ResponsePlaceholder />;
-  if (entry.state === "loading") return <LoadingView />;
-  if (entry.state === "error") return <ErrorView message={entry.error} />;
+  if (viewing && activeId && viewing.error != null) {
+    return (
+      <ErrorView
+        message={viewing.error}
+        banner={<ViewingBanner truncated={false} onBackToLive={() => backToLive(activeId)} />}
+      />
+    );
+  }
 
-  const response = entry.response;
+  let response: HttpResponse;
+  if (viewing?.response) {
+    response = viewing.response;
+  } else if (entry && entry.state === "done") {
+    response = entry.response;
+  } else if (!entry) {
+    return <ResponsePlaceholder />;
+  } else if (entry.state === "loading") {
+    return <LoadingView />;
+  } else {
+    return <ErrorView message={entry.error} />;
+  }
 
   return (
     <aside className="flex flex-col h-full bg-card border-l border-border">
+      {viewing && activeId && (
+        <ViewingBanner truncated={!!response.truncated} onBackToLive={() => backToLive(activeId)} />
+      )}
       {response.fault ? <SoapFaultBanner fault={response.fault} /> : <ResponseStatusBar response={response} />}
       <ResponseTabsStrip activeTab={activeTab} onTabChange={setActiveTab} />
       {activeTab === "body" && (
@@ -60,9 +82,10 @@ function LoadingView() {
   );
 }
 
-function ErrorView({ message }: { message: string }) {
+function ErrorView({ message, banner }: { message: string; banner?: ReactNode }) {
   return (
     <aside className="flex flex-col h-full bg-card border-l border-border">
+      {banner}
       <div className="flex flex-col items-center justify-center gap-3 flex-1 px-6 text-center">
         <CircleAlert size={28} className="text-status-5xx opacity-80" />
         <span className="text-[13px] text-status-5xx" style={{ fontFamily: "var(--font-mono)" }}>
@@ -70,6 +93,17 @@ function ErrorView({ message }: { message: string }) {
         </span>
       </div>
     </aside>
+  );
+}
+
+function ViewingBanner({ truncated, onBackToLive }: { truncated: boolean; onBackToLive: () => void }) {
+  return (
+    <div className="flex items-center justify-between px-3 py-[6px] bg-secondary border-b border-border text-[12px] text-muted">
+      <span>Viewing a past response{truncated ? " (body truncated at 1 MB)" : ""}</span>
+      <button type="button" onClick={onBackToLive} className="text-foreground cursor-pointer hover:underline">
+        Back to live
+      </button>
+    </div>
   );
 }
 

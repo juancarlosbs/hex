@@ -72,7 +72,7 @@ tauri-plugin-fs                 = "2"    # request/collection files (git-friendl
 tauri-plugin-dialog             = "2"    # open WSDL / save
 tauri-plugin-clipboard-manager  = "2"    # copy-leaf to clipboard
 tauri-plugin-store              = "2"    # settings (lightweight kv)
-# tauri-plugin-sql              = "2"    # OPTIONAL: history in SQLite (ADR-011)
+rusqlite = { version = "0.31", features = ["bundled"] }  # history DB (ADR-011), driven from Rust — plugin-sql would expose SQL to the webview
 ```
 
 ### Tauri feature for tests (ADR-015)
@@ -95,7 +95,7 @@ react@19  react-dom@19  vite  typescript
 ### UI / design system (ADR-014 — matches design tokens)
 > Tokens ARE shadcn variables (`--background/-foreground/-card/-primary/-secondary/`
 > `-muted/-accent/-destructive/-border/-input/-ring/-sidebar*/-popover`) + semantics
-> (`--method-*`, `--soap-op`, `--status-*`, `--timing-*`, `--field-*`). Single source: `styles/tokens.css`.
+> (`--method-*`, `--soap-op`, `--status-*`, `--timing-*`, `--field-*`). Single source: `src/App.css`.
 ```
 tailwindcss              # NOTE: v4 — shadcn setup differs from v3
 shadcn/ui                # via CLI; brings Radix underneath
@@ -148,7 +148,7 @@ vitest  @testing-library/react  @testing-library/user-event  jsdom
 - **rustls throughout the stack** (ADR-006) — no feature that pulls OpenSSL/native-tls, not even transitively.
 - **Tailwind v4** has a different shadcn setup than v3 — follow the v4 guide (config in CSS, not in `tailwind.config.js`).
 - **Titlebar (decorum)**: `create_overlay_titlebar()` + (macOS) `set_traffic_lights_inset(...)`; `tauri.conf.json` with `titleBarStyle:"Overlay"`, `hiddenTitle:true`. `data-tauri-drag-region` does not inherit to children — mark interactive elements as non-draggable.
-- **Heavy history in SQLite** separate from versionable collections (ADR-011) — don't mix them in the same file.
+- **Heavy history in SQLite** (`rusqlite`, stored at `app_data_dir/history.db`, separate from versionable collections per ADR-011) — driven from Rust, not exposed to the webview; don't mix with collection files.
 - **`geist`** is Vercel's font package; `@fontsource/jetbrains-mono` brings the mono. Register both font families in CSS and reference them via typography tokens.
 
 ---

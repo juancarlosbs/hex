@@ -637,7 +637,12 @@ pub fn apply_definition_update(
     }
 
     // New → restore a matching orphan, else create at the collection root.
+    let live = collect_soap_requests(&col_dir, &[], orphans_id.as_deref())?;
     for op in &diff.new {
+        // Guard against a stale/duplicate diff: skip if already live.
+        if find_by_operation(&live, &op.name).is_some() {
+            continue;
+        }
         let restored = if let Some(oid) = &orphans_id {
             let orphaned = collect_soap_requests(&col_dir.join(oid), &[oid.clone()], None)?;
             match find_by_operation(&orphaned, &op.name) {
@@ -1291,5 +1296,22 @@ mod tests {
         assert!(matches!(&sub.1, RequestKind::Soap { orphan: None, .. }));
         let orphans = orphans_folder_id(&dir, &col).unwrap();
         assert!(soap_children_at(&dir, &[col.clone(), orphans]).is_empty());
+    }
+
+    #[test]
+    fn apply_new_is_idempotent_against_a_stale_diff() {
+        let dir = tmp("f6-new-stale");
+        let col = import_service(&dir, &[fresh_op("Add", "http://x/svc")]);
+        let diff = DefinitionDiff {
+            new: vec![fresh_op("Mul", "http://x/svc")],
+            ..empty_diff()
+        };
+        apply_definition_update(&dir, "w1", &col, "http://x?wsdl", &diff).unwrap();
+        // Re-applying the same (now stale) diff must not create a duplicate.
+        apply_definition_update(&dir, "w1", &col, "http://x?wsdl", &diff).unwrap();
+
+        let children = soap_children_at(&dir, &[col.clone()]);
+        assert_eq!(children.len(), 2);
+        assert!(children.iter().any(|(n, _)| n == "Mul"));
     }
 }

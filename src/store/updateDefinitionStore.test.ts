@@ -90,6 +90,53 @@ describe("start", () => {
     expect(useUpdateDefinitionStore.getState().phase).toEqual({ state: "idle" });
     expect(api.applyDefinitionUpdate).not.toHaveBeenCalled();
   });
+
+  it("ignores a cancelled call's late resolution even once a new call is also loading", async () => {
+    useSettingsStore.setState({ skipUpdatePreview: true });
+    let resolveA!: (p: DefinitionUpdatePreview) => void;
+    let resolveB!: (p: DefinitionUpdatePreview) => void;
+    vi.mocked(api.previewDefinitionUpdate)
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveA = resolve;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveB = resolve;
+        }),
+      );
+    vi.mocked(api.applyDefinitionUpdate).mockResolvedValue(null);
+
+    const previewA: DefinitionUpdatePreview = {
+      ...PREVIEW,
+      diff: { ...PREVIEW.diff, new: [{ ...OP, name: "FromA" }] },
+    };
+    const previewB: DefinitionUpdatePreview = {
+      ...PREVIEW,
+      diff: { ...PREVIEW.diff, new: [{ ...OP, name: "FromB" }] },
+    };
+
+    const callA = useUpdateDefinitionStore.getState().start("w1", "c1");
+    useUpdateDefinitionStore.getState().reset();
+    const callB = useUpdateDefinitionStore.getState().start("w1", "c2");
+
+    // A resolves after B has already started — both phases read "loading",
+    // so a state-shaped guard would let A's stale apply through.
+    resolveA(previewA);
+    await callA;
+    expect(api.applyDefinitionUpdate).not.toHaveBeenCalledWith("w1", "c1", previewA);
+    expect(useUpdateDefinitionStore.getState().phase.state).toBe("loading"); // B still pending
+
+    resolveB(previewB);
+    await callB;
+    expect(api.applyDefinitionUpdate).toHaveBeenCalledTimes(1);
+    expect(api.applyDefinitionUpdate).toHaveBeenCalledWith("w1", "c2", previewB);
+    expect(useUpdateDefinitionStore.getState().phase).toEqual({
+      state: "done",
+      summary: "Applied: 1 new, 0 changed, 1 orphaned",
+    });
+  });
 });
 
 describe("apply", () => {

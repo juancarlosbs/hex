@@ -126,3 +126,19 @@ describe("CollectionTree — organize actions", () => {
     expect(screen.queryByText(/cannot be undone/i)).toBeNull();
   });
 });
+
+describe("CollectionTree — orphan badge", () => {
+  it("marks an orphaned soap request", () => {
+    useCollectionStore.setState({
+      collections: [{ ...soapNode, orphan: true }],
+    });
+    render(<CollectionTree workspaceId="w1" />);
+    expect(screen.getByText("orphan")).toBeTruthy();
+  });
+
+  it("does not mark a live soap request", () => {
+    useCollectionStore.setState({ collections: [soapNode] });
+    render(<CollectionTree workspaceId="w1" />);
+    expect(screen.queryByText("orphan")).toBeNull();
+  });
+});

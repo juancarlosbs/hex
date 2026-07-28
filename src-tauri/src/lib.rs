@@ -25,6 +25,8 @@ fn specta_builder() -> tauri_specta::Builder {
         commands::build_soap_envelope,
         commands::send_soap_raw,
         commands::parse_envelope,
+        commands::preview_definition_update,
+        commands::apply_definition_update,
         commands::list_history,
         commands::get_history_entry,
         commands::clear_history,

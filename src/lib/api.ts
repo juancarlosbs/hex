@@ -2,6 +2,7 @@
 // Components never call invoke directly — and never import bindings directly either.
 import { commands, type Result } from "../bindings";
 import type {
+  DefinitionUpdatePreview,
   Environment,
   FormValue,
   QName,
@@ -16,6 +17,8 @@ import type {
 export type {
   Attribute,
   CollectionNode,
+  DefinitionDiff,
+  DefinitionUpdatePreview,
   Environment,
   EnvironmentList,
   FormValue,
@@ -154,6 +157,15 @@ export const api = {
 
   parseSoapEnvelope: (spec: { envelope: string; schema: SchemaNode }) =>
     unwrap(commands.parseEnvelope(spec.envelope, spec.schema)),
+
+  previewDefinitionUpdate: (workspaceId: string, collectionId: string) =>
+    unwrap(commands.previewDefinitionUpdate(workspaceId, collectionId)),
+
+  applyDefinitionUpdate: (
+    workspaceId: string,
+    collectionId: string,
+    preview: DefinitionUpdatePreview,
+  ) => unwrap(commands.applyDefinitionUpdate(workspaceId, collectionId, preview)),
 
   listHistory: (requestId: string) => unwrap(commands.listHistory(requestId)),
   getHistoryEntry: (entryId: number) => unwrap(commands.getHistoryEntry(entryId)),

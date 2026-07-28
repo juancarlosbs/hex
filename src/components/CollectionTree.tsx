@@ -17,6 +17,8 @@ import { ChevronDown, Folder, Hexagon } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useCollectionStore } from "../store/collectionStore";
 import { useRequestStore } from "../store/requestStore";
+import { useUpdateDefinitionStore } from "../store/updateDefinitionStore";
+import type { CollectionNode } from "../lib/api";
 import {
   FlatItem,
   INDENT,
@@ -41,7 +43,14 @@ type MenuAction =
   | { type: "duplicate"; path: string[] }
   | { type: "delete"; path: string[] }
   | { type: "newFolder"; parentPath: string[] }
-  | { type: "newRequest"; parentPath: string[] };
+  | { type: "newRequest"; parentPath: string[] }
+  | { type: "updateDefinition"; collectionId: string };
+
+function hasSoapRequest(node: Extract<CollectionNode, { type: "folder" }>): boolean {
+  return node.children.some((c) =>
+    c.type === "request" ? c.kind === "soap" : hasSoapRequest(c)
+  );
+}
 
 function ContextMenu({
   x,
@@ -71,6 +80,7 @@ function ContextMenu({
     if (a.type === "duplicate") return "Duplicate";
     if (a.type === "delete") return "Delete";
     if (a.type === "newFolder") return "New Folder";
+    if (a.type === "updateDefinition") return "Update Definition";
     return "New Request";
   };
 
@@ -283,6 +293,7 @@ function SortableRow({
   const openInStore = useRequestStore((s) => s.openRequest);
   const closeInStore = useRequestStore((s) => s.closeRequest);
   const closeRequestsUnder = useRequestStore((s) => s.closeRequestsUnder);
+  const startUpdateDefinition = useUpdateDefinitionStore((s) => s.start);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: node.id,
@@ -300,10 +311,15 @@ function SortableRow({
     if (a.type === "delete") setConfirmingDelete(true);
     if (a.type === "newFolder") onPendingCreate(path, "folder");
     if (a.type === "newRequest") onPendingCreate(path, "request");
+    if (a.type === "updateDefinition") startUpdateDefinition(workspaceId, a.collectionId);
   }
 
   if (node.type === "folder") {
+    // Update Definition targets an imported service: a root collection holding SOAP requests.
     const menuActions: MenuAction[] = [
+      ...(path.length === 1 && hasSoapRequest(node)
+        ? [{ type: "updateDefinition", collectionId: node.id } satisfies MenuAction]
+        : []),
       { type: "newRequest", parentPath: path },
       { type: "newFolder", parentPath: path },
       { type: "rename", path, currentName: node.name },
@@ -361,6 +377,7 @@ function SortableRow({
 
   const isActive = activeRequestId === node.id;
   const isSoap = node.kind === "soap";
+  const isOrphan = node.kind === "soap" && node.orphan === true;
   const menuActions: MenuAction[] = [
     { type: "rename", path, currentName: node.name },
     { type: "duplicate", path },
@@ -409,6 +426,14 @@ function SortableRow({
         ) : (
           <span className={cn("text-[12px] font-mono", isActive ? "text-foreground" : "text-sidebar-muted")}>
             {node.name}
+          </span>
+        )}
+        {isOrphan && (
+          <span
+            className="ml-auto shrink-0 text-[9px] uppercase tracking-[0.5px] text-sidebar-muted border border-border rounded-[3px] px-1"
+            title="Operation no longer exists in the WSDL"
+          >
+            orphan
           </span>
         )}
       </div>

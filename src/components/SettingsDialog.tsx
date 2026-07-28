@@ -15,6 +15,7 @@ import {
 import { cn } from "../lib/utils";
 import { useWorkspaceStore, type Workspace } from "../store/workspaceStore";
 import { useEnvStore } from "../store/envStore";
+import { useSettingsStore } from "../store/settingsStore";
 
 const ENV_DOT_COLORS: Record<string, string> = {
   Development: "#28C840",
@@ -585,6 +586,38 @@ function EnvironmentsSection({ onClose }: { onClose: () => void }) {
   );
 }
 
+function GeneralSection({ onClose }: { onClose: () => void }) {
+  const skip = useSettingsStore((s) => s.skipUpdatePreview);
+  const setSkip = useSettingsStore((s) => s.setSkipUpdatePreview);
+  return (
+    <div className="relative flex flex-col gap-4 p-6">
+      <button
+        className="absolute top-3 right-3 p-1 rounded text-muted hover:text-foreground cursor-pointer"
+        onClick={onClose}
+      >
+        <X size={16} />
+      </button>
+      <span className="text-[15px] font-semibold text-foreground">General</span>
+      <label className="flex items-start gap-3 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          className="mt-[2px]"
+          checked={skip}
+          onChange={(e) => setSkip(e.target.checked)}
+        />
+        <span className="flex flex-col">
+          <span className="text-[13px] text-foreground">
+            Apply definition updates without preview
+          </span>
+          <span className="text-[11px] text-muted">
+            Update Definition applies changes immediately and shows a summary instead of the diff modal.
+          </span>
+        </span>
+      </label>
+    </div>
+  );
+}
+
 export function SettingsDialog({ open, onClose, initialSection }: Props) {
   const [section, setSection] = useState<Section>(
     initialSection ?? "workspaces",
@@ -631,7 +664,9 @@ export function SettingsDialog({ open, onClose, initialSection }: Props) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto relative">
-          {section === "workspaces" ? (
+          {section === "general" ? (
+            <GeneralSection onClose={onClose} />
+          ) : section === "workspaces" ? (
             <WorkspacesSection onClose={onClose} />
           ) : section === "environments" ? (
             <EnvironmentsSection onClose={onClose} />

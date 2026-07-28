@@ -2,6 +2,7 @@ import { Group, Panel, Separator } from "react-resizable-panels";
 import { Sidebar } from "./Sidebar";
 import { RequestPanel } from "./request/RequestPanel";
 import { ResponsePanel } from "./response/ResponsePanel";
+import { HistoryDrawer } from "./response/HistoryDrawer";
 
 export function CentralPanel() {
   return (
@@ -13,7 +14,10 @@ export function CentralPanel() {
         </Panel>
         <Separator className="w-[1px] bg-border hover:bg-primary/40 transition-colors" />
         <Panel defaultSize={40} minSize={20}>
-          <ResponsePanel />
+          <div className="relative h-full">
+            <ResponsePanel />
+            <HistoryDrawer />
+          </div>
         </Panel>
       </Group>
     </div>

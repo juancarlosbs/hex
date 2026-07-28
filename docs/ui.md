@@ -2,16 +2,16 @@
 
 > How the frontend looks and is organized: tokens, layout, titlebar, components, and the rendering
 > rules for central pieces (SchemaForm, response tree, waterfall). Rule for the agent: color,
-> font, and radius come ONLY from tokens (`styles/tokens.css`) — no hardcoded hex in components.
+> font, and radius come ONLY from tokens (`src/App.css`) — no hardcoded hex in components.
 > Types come from `domain-model.md`; folder structure from `architecture.md`.
 
 Dark-first. High density (reference: Yaak/Linear). The values below are from the design (Pencil), source of truth.
 
 ---
 
-## 1. Design tokens (`styles/tokens.css`)
+## 1. Design tokens (`src/App.css`)
 
-shadcn vocabulary + semantics. These ARE the values; `styles/tokens.css` declares them as CSS vars and Tailwind/shadcn reference them.
+shadcn vocabulary + semantics. These ARE the values; `src/App.css` declares them as CSS vars and Tailwind/shadcn reference them.
 
 ### Surfaces & text
 ```

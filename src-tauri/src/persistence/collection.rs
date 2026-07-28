@@ -143,7 +143,7 @@ fn resolve_path(root: &Path, ids: &[String]) -> PathBuf {
     ids.iter().fold(root.to_path_buf(), |p, id| p.join(id))
 }
 
-fn validate_ids(ids: &[String]) -> anyhow::Result<()> {
+pub(crate) fn validate_ids(ids: &[String]) -> anyhow::Result<()> {
     for id in ids {
         if id.contains('/') || id.contains('\\') || id == ".." || id == "." {
             anyhow::bail!("invalid id: {id}");
@@ -403,6 +403,101 @@ pub fn delete_node(data_dir: &Path, workspace_id: &str, path: Vec<String>) -> an
         write_folder_meta(&parent, &meta)?;
     }
     Ok(())
+}
+
+fn insert_after(order: &mut Vec<String>, after: &str, id: String) {
+    let pos = order
+        .iter()
+        .position(|x| x == after)
+        .map(|i| i + 1)
+        .unwrap_or(order.len());
+    order.insert(pos, id);
+}
+
+fn copy_folder_recursive(
+    src: &Path,
+    dest_parent: &Path,
+    top: bool,
+) -> anyhow::Result<(String, CollectionNode)> {
+    let meta = read_folder_meta(src)?;
+    let id = new_id();
+    let name = if top {
+        format!("{} copy", meta.name)
+    } else {
+        meta.name.clone()
+    };
+    let dest = dest_parent.join(&id);
+    std::fs::create_dir_all(&dest)?;
+    let mut new_order = vec![];
+    let mut children = vec![];
+    for child_id in &meta.children_order {
+        let child_dir = src.join(child_id);
+        let child_file = src.join(format!("{child_id}.toml"));
+        if child_dir.is_dir() {
+            let (cid, cnode) = copy_folder_recursive(&child_dir, &dest, false)?;
+            new_order.push(cid);
+            children.push(cnode);
+        } else if child_file.exists() {
+            let mut rf: RequestFile = toml::from_str(&std::fs::read_to_string(&child_file)?)?;
+            let cid = new_id();
+            rf.id = cid.clone();
+            std::fs::write(dest.join(format!("{cid}.toml")), toml::to_string(&rf)?)?;
+            new_order.push(cid.clone());
+            children.push(CollectionNode::Request(RequestNode {
+                id: cid,
+                name: rf.name,
+                kind: rf.kind,
+            }));
+        }
+    }
+    write_folder_meta(
+        &dest,
+        &FolderMeta {
+            name: name.clone(),
+            children_order: new_order,
+        },
+    )?;
+    Ok((id.clone(), CollectionNode::Folder { id, name, children }))
+}
+
+pub fn duplicate_node(
+    data_dir: &Path,
+    workspace_id: &str,
+    path: Vec<String>,
+) -> anyhow::Result<CollectionNode> {
+    validate_ids(&path)?;
+    let root = collections_root(data_dir, workspace_id);
+    let orig_id = path.last().ok_or_else(|| anyhow::anyhow!("empty path"))?;
+    let parent = resolve_path(&root, &path[..path.len() - 1]);
+    let as_dir = parent.join(orig_id);
+
+    let (new_id, node) = if as_dir.is_dir() {
+        copy_folder_recursive(&as_dir, &parent, true)?
+    } else {
+        let file = parent.join(format!("{orig_id}.toml"));
+        let mut rf: RequestFile = toml::from_str(&std::fs::read_to_string(&file)?)?;
+        let id = self::new_id();
+        rf.id = id.clone();
+        rf.name = format!("{} copy", rf.name);
+        std::fs::write(parent.join(format!("{id}.toml")), toml::to_string(&rf)?)?;
+        let node = CollectionNode::Request(RequestNode {
+            id: id.clone(),
+            name: rf.name,
+            kind: rf.kind,
+        });
+        (id, node)
+    };
+
+    if path.len() == 1 {
+        let mut meta = read_root_meta(&root)?;
+        insert_after(&mut meta.children_order, orig_id, new_id);
+        write_root_meta(&root, &meta)?;
+    } else {
+        let mut meta = read_folder_meta(&parent)?;
+        insert_after(&mut meta.children_order, orig_id, new_id);
+        write_folder_meta(&parent, &meta)?;
+    }
+    Ok(node)
 }
 
 pub fn reorder_children(
@@ -683,6 +778,73 @@ pub fn apply_definition_update(
         )?;
     }
 
+    Ok(())
+}
+
+pub fn move_node(
+    data_dir: &Path,
+    workspace_id: &str,
+    from_path: Vec<String>,
+    to_parent_path: Vec<String>,
+    index: usize,
+) -> anyhow::Result<()> {
+    validate_ids(&from_path)?;
+    validate_ids(&to_parent_path)?;
+    let id = from_path
+        .last()
+        .ok_or_else(|| anyhow::anyhow!("empty path"))?
+        .clone();
+    if from_path.len() == 1 {
+        anyhow::bail!("cannot move a root collection");
+    }
+    if to_parent_path.is_empty() {
+        anyhow::bail!("cannot move a node to the root level");
+    }
+    if to_parent_path.starts_with(&from_path) {
+        anyhow::bail!("cannot move a folder into itself or a descendant");
+    }
+
+    let root = collections_root(data_dir, workspace_id);
+    let from_parent = resolve_path(&root, &from_path[..from_path.len() - 1]);
+    let to_parent = resolve_path(&root, &to_parent_path);
+    if !to_parent.is_dir() {
+        anyhow::bail!("destination folder does not exist");
+    }
+
+    let src_dir = from_parent.join(&id);
+    let (src, dst) = if src_dir.is_dir() {
+        (src_dir, to_parent.join(&id))
+    } else {
+        (
+            from_parent.join(format!("{id}.toml")),
+            to_parent.join(format!("{id}.toml")),
+        )
+    };
+
+    if from_parent == to_parent {
+        // same parent: just reposition within children_order
+        let mut meta = read_folder_meta(&to_parent)?;
+        meta.children_order.retain(|x| x != &id);
+        let idx = index.min(meta.children_order.len());
+        meta.children_order.insert(idx, id);
+        write_folder_meta(&to_parent, &meta)?;
+        return Ok(());
+    }
+
+    // Crash-safe ordering: insert into the destination meta, then rename the
+    // file/dir, then remove from the source meta. Every intermediate crash
+    // state renders the node exactly once — a dangling meta entry pointing at
+    // a not-yet-renamed file is harmlessly skipped by `read_folder_children`.
+    let mut to_meta = read_folder_meta(&to_parent)?;
+    let idx = index.min(to_meta.children_order.len());
+    to_meta.children_order.insert(idx, id.clone());
+    write_folder_meta(&to_parent, &to_meta)?;
+
+    std::fs::rename(&src, &dst)?;
+
+    let mut from_meta = read_folder_meta(&from_parent)?;
+    from_meta.children_order.retain(|x| x != &id);
+    write_folder_meta(&from_parent, &from_meta)?;
     Ok(())
 }
 
@@ -1313,5 +1475,373 @@ mod tests {
         let children = soap_children_at(&dir, &[col.clone()]);
         assert_eq!(children.len(), 2);
         assert!(children.iter().any(|(n, _)| n == "Mul"));
+    }
+
+    // ── move_node ────────────────────────────────────────────────────────────
+
+    /// col with two folders: A (containing one GET request) and B (empty).
+    /// Returns (dir, col_id, a_id, b_id, req_id).
+    fn setup_two_folders(name: &str) -> (PathBuf, String, String, String, String) {
+        let dir = tmp(name);
+        let col = create_collection(&dir, "ws1", "Col").unwrap();
+        let CollectionNode::Folder { id: col_id, .. } = col else {
+            panic!()
+        };
+        let a = create_folder(&dir, "ws1", vec![col_id.clone()], "A").unwrap();
+        let CollectionNode::Folder { id: a_id, .. } = a else {
+            panic!()
+        };
+        let b = create_folder(&dir, "ws1", vec![col_id.clone()], "B").unwrap();
+        let CollectionNode::Folder { id: b_id, .. } = b else {
+            panic!()
+        };
+        let req = create_request(
+            &dir,
+            "ws1",
+            vec![col_id.clone(), a_id.clone()],
+            "R",
+            RequestKind::Rest {
+                method: "GET".into(),
+                url: "u".into(),
+            },
+        )
+        .unwrap();
+        let CollectionNode::Request(RequestNode { id: req_id, .. }) = req else {
+            panic!()
+        };
+        (dir, col_id, a_id, b_id, req_id)
+    }
+
+    /// Children of the collection's folder named `folder_name`.
+    fn folder_children(dir: &Path, col_id: &str, folder_id: &str) -> Vec<CollectionNode> {
+        let cols = list_collections(dir, "ws1").unwrap();
+        let CollectionNode::Folder { children, id, .. } = &cols[0] else {
+            panic!()
+        };
+        assert_eq!(id, col_id);
+        for c in children {
+            if let CollectionNode::Folder { id, children, .. } = c {
+                if id == folder_id {
+                    return children.clone();
+                }
+            }
+        }
+        panic!("folder {folder_id} not found");
+    }
+
+    #[test]
+    fn move_request_across_folders() {
+        let (dir, col_id, a_id, b_id, req_id) = setup_two_folders("move-req");
+        move_node(
+            &dir,
+            "ws1",
+            vec![col_id.clone(), a_id.clone(), req_id.clone()],
+            vec![col_id.clone(), b_id.clone()],
+            0,
+        )
+        .unwrap();
+        assert!(folder_children(&dir, &col_id, &a_id).is_empty());
+        let b_children = folder_children(&dir, &col_id, &b_id);
+        assert_eq!(b_children.len(), 1);
+        let CollectionNode::Request(RequestNode { id, .. }) = &b_children[0] else {
+            panic!()
+        };
+        assert_eq!(id, &req_id);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn move_folder_with_children_across() {
+        // move folder A (which contains the request) into folder B
+        let (dir, col_id, a_id, b_id, req_id) = setup_two_folders("move-folder");
+        move_node(
+            &dir,
+            "ws1",
+            vec![col_id.clone(), a_id.clone()],
+            vec![col_id.clone(), b_id.clone()],
+            0,
+        )
+        .unwrap();
+        let b_children = folder_children(&dir, &col_id, &b_id);
+        assert_eq!(b_children.len(), 1);
+        let CollectionNode::Folder { id, children, .. } = &b_children[0] else {
+            panic!()
+        };
+        assert_eq!(id, &a_id);
+        let CollectionNode::Request(RequestNode { id: rid, .. }) = &children[0] else {
+            panic!()
+        };
+        assert_eq!(rid, &req_id);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn move_into_own_descendant_is_rejected() {
+        // B into A is fine; then A into A/B must fail
+        let (dir, col_id, a_id, b_id, _req_id) = setup_two_folders("move-cycle");
+        move_node(
+            &dir,
+            "ws1",
+            vec![col_id.clone(), b_id.clone()],
+            vec![col_id.clone(), a_id.clone()],
+            0,
+        )
+        .unwrap();
+        let err = move_node(
+            &dir,
+            "ws1",
+            vec![col_id.clone(), a_id.clone()],
+            vec![col_id.clone(), a_id.clone(), b_id.clone()],
+            0,
+        );
+        assert!(err.is_err());
+        // also: a folder into itself
+        let err = move_node(
+            &dir,
+            "ws1",
+            vec![col_id.clone(), a_id.clone()],
+            vec![col_id.clone(), a_id.clone()],
+            0,
+        );
+        assert!(err.is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn move_root_collection_is_rejected() {
+        let (dir, col_id, a_id, _b_id, _req_id) = setup_two_folders("move-root");
+        assert!(move_node(
+            &dir,
+            "ws1",
+            vec![col_id.clone()],
+            vec![col_id.clone(), a_id],
+            0
+        )
+        .is_err());
+        // and nothing may land at root
+        let (dir2, col_id2, a_id2, _b, _r) = setup_two_folders("move-to-root");
+        assert!(move_node(&dir2, "ws1", vec![col_id2, a_id2], vec![], 0).is_err());
+        fs::remove_dir_all(dir).unwrap();
+        fs::remove_dir_all(dir2).unwrap();
+    }
+
+    #[test]
+    fn move_with_out_of_range_index_appends() {
+        let (dir, col_id, a_id, b_id, req_id) = setup_two_folders("move-clamp");
+        move_node(
+            &dir,
+            "ws1",
+            vec![col_id.clone(), a_id.clone(), req_id.clone()],
+            vec![col_id.clone(), b_id.clone()],
+            99,
+        )
+        .unwrap();
+        let b_children = folder_children(&dir, &col_id, &b_id);
+        assert_eq!(b_children.len(), 1);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn move_into_nonexistent_destination_is_rejected_and_leaves_source_intact() {
+        let (dir, col_id, a_id, _b_id, req_id) = setup_two_folders("move-no-dest");
+        let err = move_node(
+            &dir,
+            "ws1",
+            vec![col_id.clone(), a_id.clone(), req_id.clone()],
+            vec![col_id.clone(), "does-not-exist".into()],
+            0,
+        );
+        assert!(err.is_err());
+        let a_children = folder_children(&dir, &col_id, &a_id);
+        assert_eq!(a_children.len(), 1);
+        let CollectionNode::Request(RequestNode { id, .. }) = &a_children[0] else {
+            panic!()
+        };
+        assert_eq!(id, &req_id);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn move_inserts_at_exact_index() {
+        // B gets a request of its own first; then move A's request to B at index 0
+        let (dir, col_id, a_id, b_id, req_id) = setup_two_folders("move-index");
+        let existing = create_request(
+            &dir,
+            "ws1",
+            vec![col_id.clone(), b_id.clone()],
+            "Existing",
+            RequestKind::Rest {
+                method: "GET".into(),
+                url: "u".into(),
+            },
+        )
+        .unwrap();
+        let CollectionNode::Request(RequestNode {
+            id: existing_id, ..
+        }) = existing
+        else {
+            panic!()
+        };
+        move_node(
+            &dir,
+            "ws1",
+            vec![col_id.clone(), a_id, req_id.clone()],
+            vec![col_id.clone(), b_id.clone()],
+            0,
+        )
+        .unwrap();
+        let b_children = folder_children(&dir, &col_id, &b_id);
+        let ids: Vec<&str> = b_children
+            .iter()
+            .map(|n| match n {
+                CollectionNode::Request(RequestNode { id, .. }) => id.as_str(),
+                CollectionNode::Folder { id, .. } => id.as_str(),
+            })
+            .collect();
+        assert_eq!(ids, vec![req_id.as_str(), existing_id.as_str()]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn duplicate_request_inserts_copy_after_original() {
+        let dir = tmp("dup-request");
+        let col = create_collection(&dir, "ws1", "Col").unwrap();
+        let CollectionNode::Folder { id: col_id, .. } = col else {
+            panic!()
+        };
+        let a = create_request(
+            &dir,
+            "ws1",
+            vec![col_id.clone()],
+            "A",
+            RequestKind::Rest {
+                method: "GET".into(),
+                url: "http://a".into(),
+            },
+        )
+        .unwrap();
+        let CollectionNode::Request(RequestNode { id: a_id, .. }) = a else {
+            panic!()
+        };
+        create_request(
+            &dir,
+            "ws1",
+            vec![col_id.clone()],
+            "B",
+            RequestKind::Rest {
+                method: "GET".into(),
+                url: "http://b".into(),
+            },
+        )
+        .unwrap();
+
+        let copy = duplicate_node(&dir, "ws1", vec![col_id.clone(), a_id.clone()]).unwrap();
+        let CollectionNode::Request(RequestNode {
+            id: copy_id,
+            name: copy_name,
+            kind: RequestKind::Rest { url, .. },
+        }) = copy
+        else {
+            panic!()
+        };
+        assert_eq!(copy_name, "A copy");
+        assert_ne!(copy_id, a_id);
+        assert_eq!(url, "http://a");
+
+        // order on disk: A, A copy, B
+        let cols = list_collections(&dir, "ws1").unwrap();
+        let CollectionNode::Folder { children, .. } = &cols[0] else {
+            panic!()
+        };
+        let names: Vec<_> = children
+            .iter()
+            .map(|n| match n {
+                CollectionNode::Request(r) => r.name.clone(),
+                CollectionNode::Folder { name, .. } => name.clone(),
+            })
+            .collect();
+        assert_eq!(names, vec!["A", "A copy", "B"]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn duplicate_folder_recursively_with_fresh_ids() {
+        let dir = tmp("dup-folder");
+        let col = create_collection(&dir, "ws1", "Col").unwrap();
+        let CollectionNode::Folder { id: col_id, .. } = col else {
+            panic!()
+        };
+        let f = create_folder(&dir, "ws1", vec![col_id.clone()], "F").unwrap();
+        let CollectionNode::Folder { id: f_id, .. } = f else {
+            panic!()
+        };
+        let r = create_request(
+            &dir,
+            "ws1",
+            vec![col_id.clone(), f_id.clone()],
+            "R",
+            RequestKind::Rest {
+                method: "GET".into(),
+                url: "http://r".into(),
+            },
+        )
+        .unwrap();
+        let CollectionNode::Request(RequestNode { id: r_id, .. }) = r else {
+            panic!()
+        };
+
+        let copy = duplicate_node(&dir, "ws1", vec![col_id.clone(), f_id.clone()]).unwrap();
+        let CollectionNode::Folder {
+            id: copy_id,
+            name: copy_name,
+            children,
+        } = copy
+        else {
+            panic!()
+        };
+        assert_eq!(copy_name, "F copy");
+        assert_ne!(copy_id, f_id);
+        // child keeps its name but gets a fresh id
+        let CollectionNode::Request(RequestNode {
+            id: child_id,
+            name: child_name,
+            ..
+        }) = &children[0]
+        else {
+            panic!()
+        };
+        assert_eq!(child_name, "R");
+        assert_ne!(child_id, &r_id);
+
+        // fs round-trip agrees
+        let cols = list_collections(&dir, "ws1").unwrap();
+        let CollectionNode::Folder { children, .. } = &cols[0] else {
+            panic!()
+        };
+        assert_eq!(children.len(), 2);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn duplicate_collection_at_root() {
+        let dir = tmp("dup-collection");
+        let a = create_collection(&dir, "ws1", "A").unwrap();
+        let CollectionNode::Folder { id: a_id, .. } = a else {
+            panic!()
+        };
+        create_collection(&dir, "ws1", "B").unwrap();
+
+        duplicate_node(&dir, "ws1", vec![a_id]).unwrap();
+
+        let cols = list_collections(&dir, "ws1").unwrap();
+        let names: Vec<_> = cols
+            .iter()
+            .map(|n| match n {
+                CollectionNode::Folder { name, .. } => name.clone(),
+                _ => panic!(),
+            })
+            .collect();
+        assert_eq!(names, vec!["A", "A copy", "B"]);
+        fs::remove_dir_all(dir).unwrap();
     }
 }

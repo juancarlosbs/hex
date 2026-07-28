@@ -6,6 +6,7 @@ import { AddWorkspaceModal } from "./AddWorkspaceModal";
 import { SettingsDialog } from "./SettingsDialog";
 import { useRequestStore } from "../store/requestStore";
 import { useCollectionStore } from "../store/collectionStore";
+import { useEnvStore } from "../store/envStore";
 
 const METHOD_COLORS: Record<string, string> = {
   GET: "text-method-get",
@@ -115,14 +116,11 @@ function DiscardChangesDialog({ onCancel, onDiscard }: { onCancel: () => void; o
   );
 }
 
-const ENVS = [
-  { name: "Development" },
-  { name: "Staging" },
-  { name: "Production" },
-];
-
 export function Titlebar() {
-  const [env, setEnv] = useState<string | null>("Development");
+  const environments = useEnvStore((s) => s.environments);
+  const activeEnvId = useEnvStore((s) => s.activeId);
+  const setActiveEnv = useEnvStore((s) => s.setActive);
+  const activeEnv = environments.find((e) => e.id === activeEnvId) ?? null;
   const [addOpen, setAddOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"workspaces" | "environments" | undefined>();
 
@@ -147,7 +145,12 @@ export function Titlebar() {
           className="flex items-center gap-2"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
-          <EnvSelector env={env} envs={ENVS} onSelect={setEnv} onManage={() => setSettingsSection("environments")} />
+          <EnvSelector
+            env={activeEnv}
+            envs={environments}
+            onSelect={setActiveEnv}
+            onManage={() => setSettingsSection("environments")}
+          />
 
           <div className="flex items-center gap-2 px-2 py-[6px] w-[260px] rounded-[4px] bg-secondary border border-border cursor-text">
             <Search size={13} className="text-muted shrink-0" />

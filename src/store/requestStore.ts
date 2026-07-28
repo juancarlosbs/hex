@@ -8,12 +8,14 @@ import {
   KeyValue,
   OpenRequest,
   RequestTab,
+  RestBody,
   makeEmptyRequest,
 } from "../lib/request-types";
-import { api, FormValue, RequestFileData } from "../lib/api";
+import { api, FormValue, HistorySpec, RequestFileData, WsdlQName } from "../lib/api";
 import { useWorkspaceStore } from "./workspaceStore";
 import { useCollectionStore } from "./collectionStore";
 import { useResponseStore } from "./responseStore";
+import { useHistoryStore } from "./historyStore";
 import { defaultFormValue } from "./soapForm";
 
 interface RequestState {
@@ -25,6 +27,7 @@ interface RequestState {
   saveRequest(id: string): Promise<void>;
   closeRequest(id: string): void;
   closeRequestsUnder(prefix: string[]): void;
+  updatePathsUnder(oldPrefix: string[], newPrefix: string[]): void;
   closeAll(): void;
   setActive(id: string | null): void;
 
@@ -52,6 +55,8 @@ interface RequestState {
    * source again), or an error message when the XML doesn't conform (draft kept,
    * request stays in raw mode). */
   commitSoapXml(id: string): Promise<string | null>;
+
+  applyHistorySpec(id: string, spec: HistorySpec): void;
 }
 
 const uid = () => crypto.randomUUID();
@@ -139,6 +144,8 @@ export const useRequestStore = create<RequestState>((set, get) => ({
       return { openRequests: rest, order, activeId };
     });
     useResponseStore.getState().clear(id);
+    if (useHistoryStore.getState().openFor === id) useHistoryStore.getState().close();
+    useHistoryStore.getState().backToLive(id);
   },
 
   closeRequestsUnder(prefix) {
@@ -160,12 +167,29 @@ export const useRequestStore = create<RequestState>((set, get) => ({
     removedIds.forEach((rid) => useResponseStore.getState().clear(rid));
   },
 
+  updatePathsUnder(oldPrefix, newPrefix) {
+    const isUnder = (path: string[]) =>
+      path.length >= oldPrefix.length && oldPrefix.every((v, i) => path[i] === v);
+    set((s) => ({
+      openRequests: Object.fromEntries(
+        Object.entries(s.openRequests).map(([id, r]) =>
+          isUnder(r.path)
+            ? [id, { ...r, path: [...newPrefix, ...r.path.slice(oldPrefix.length)] }]
+            : [id, r]
+        )
+      ),
+    }));
+  },
+
   closeAll() {
     set({ openRequests: {}, order: [], activeId: null });
     useResponseStore.getState().clearAll();
   },
 
-  setActive(id) { set({ activeId: id }); },
+  setActive(id) {
+    set({ activeId: id });
+    useHistoryStore.getState().close();
+  },
 
   setUrl(id, url) {
     set((s) => ({ openRequests: patch(s.openRequests, id, { url, dirty: true }) }));
@@ -303,6 +327,84 @@ export const useRequestStore = create<RequestState>((set, get) => ({
         }),
       };
     });
+  },
+
+  applyHistorySpec(id, spec) {
+    // Set outside `set()` when the soap branch below finds the restored operation
+    // differs from the current one — fetched after the state update, mirroring openRequest.
+    let refetchSchema: { wsdlUrl: string; inputElement: WsdlQName } | null = null;
+    set((s) => {
+      const req = s.openRequests[id];
+      if (!req) return s;
+      let next = req;
+      if (spec.kind === "rest") {
+        const r = spec.spec;
+        next = {
+          ...req,
+          method: r.method as HttpMethod,
+          url: r.url,
+          params: r.params as KeyValue[],
+          headers: r.headers as KeyValue[],
+          body: r.body as RestBody,
+          auth: r.auth as AuthConfig,
+          dirty: true,
+        };
+      } else if (spec.kind === "soap" && req.soap) {
+        const meta = {
+          wsdlUrl: spec.wsdlUrl,
+          inputElement: spec.inputElement,
+          endpoint: spec.endpoint,
+          soapAction: spec.soapAction,
+          soapVersion: spec.soapVersion,
+        };
+        const sameOperation =
+          req.soap.meta.wsdlUrl === meta.wsdlUrl &&
+          req.soap.meta.inputElement.namespace === meta.inputElement.namespace &&
+          req.soap.meta.inputElement.local === meta.inputElement.local;
+        if (!sameOperation) {
+          refetchSchema = { wsdlUrl: meta.wsdlUrl, inputElement: meta.inputElement };
+        }
+        next = {
+          ...req,
+          dirty: true,
+          soap: {
+            ...req.soap,
+            meta,
+            schema: sameOperation ? req.soap.schema : null,
+            value: spec.value,
+            xmlDraft: null,
+          },
+        };
+      } else if (spec.kind === "soapRaw" && req.soap) {
+        next = {
+          ...req,
+          dirty: true,
+          soap: {
+            ...req.soap,
+            meta: { ...req.soap.meta, endpoint: spec.endpoint, soapAction: spec.soapAction, soapVersion: spec.soapVersion },
+            xmlDraft: spec.envelope,
+          },
+        };
+      }
+      return { openRequests: { ...s.openRequests, [id]: next } };
+    });
+
+    if (refetchSchema) {
+      const { wsdlUrl, inputElement } = refetchSchema;
+      api
+        .getOperationSchema(wsdlUrl, inputElement)
+        .then((schema) => {
+          set((s) => {
+            const r = s.openRequests[id];
+            // re-check: the request may have been closed/superseded while the fetch was in flight
+            if (!r || !r.soap) return s;
+            return { openRequests: patch(s.openRequests, id, { soap: { ...r.soap, schema } }) };
+          });
+        })
+        .catch((e) => {
+          console.error("getOperationSchema failed:", e);
+        });
+    }
   },
 }));
 

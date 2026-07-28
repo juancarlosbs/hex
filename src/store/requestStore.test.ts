@@ -6,6 +6,7 @@ vi.mock("../lib/api", () => ({
     updateRequest: vi.fn().mockResolvedValue(undefined),
     sendRequest: vi.fn(),
     parseSoapEnvelope: vi.fn(),
+    getOperationSchema: vi.fn().mockResolvedValue(undefined),
   },
 }));
 vi.mock("./workspaceStore", () => ({
@@ -183,5 +184,154 @@ describe("commitSoapXml", () => {
     const soap = useRequestStore.getState().openRequests.s1.soap!;
     expect(soap.xmlDraft).toBe("<bad/>");
     expect(soap.value).toEqual({ leaf: "old" });
+  });
+});
+
+describe("updatePathsUnder", () => {
+  it("rewrites the path prefix of open requests under the moved node", () => {
+    useRequestStore.setState({
+      openRequests: { r1: makeEmptyRequest("r1", "R1", "GET", ["c1", "f1", "r1"]) },
+      order: ["r1"],
+      activeId: "r1",
+    });
+    useRequestStore.getState().updatePathsUnder(["c1", "f1"], ["c1", "f2", "f1"]);
+    expect(useRequestStore.getState().openRequests.r1.path).toEqual(["c1", "f2", "f1", "r1"]);
+  });
+
+  it("leaves requests outside the prefix untouched", () => {
+    useRequestStore.setState({
+      openRequests: { r1: makeEmptyRequest("r1", "R1", "GET", ["c1", "other", "r1"]) },
+      order: ["r1"],
+      activeId: "r1",
+    });
+    useRequestStore.getState().updatePathsUnder(["c1", "f1"], ["c1", "f2", "f1"]);
+    expect(useRequestStore.getState().openRequests.r1.path).toEqual(["c1", "other", "r1"]);
+  });
+});
+
+describe("applyHistorySpec", () => {
+  const leafSchema = {
+    name: "Op", namespace: null, occurs: { min: 1, max: { bounded: 1 } }, nillable: false,
+    doc: null, attributes: [], kind: { leaf: { xsdType: "string", enumValues: [], default: null, fixed: null } },
+  };
+
+  function seedSoap() {
+    useRequestStore.setState({
+      openRequests: {
+        s1: {
+          ...makeEmptyRequest("s1", "S1", "POST", ["c1", "s1"]),
+          soap: {
+            meta: {
+              wsdlUrl: "https://old.dev?wsdl",
+              inputElement: { namespace: "", local: "Op" },
+              endpoint: "https://old.dev/svc",
+              soapAction: "urn:old",
+              soapVersion: "1.1",
+            },
+            schema: leafSchema as never,
+            value: { leaf: "old" },
+            xmlDraft: "old",
+          },
+        },
+      },
+      order: ["s1"],
+      activeId: "s1",
+    });
+  }
+
+  it("restores a REST spec into the open request", () => {
+    useRequestStore.getState().applyHistorySpec("r1", {
+      kind: "rest",
+      spec: {
+        method: "POST",
+        url: "https://restored.dev",
+        params: [{ id: "p1", key: "a", value: "1", enabled: true }],
+        headers: [],
+        body: { mode: "json", json: "{\"x\":1}", form: [] },
+        auth: { type: "bearer", token: "tok" },
+      },
+    });
+    const req = useRequestStore.getState().openRequests.r1;
+    expect(req.method).toBe("POST");
+    expect(req.url).toBe("https://restored.dev");
+    expect(req.params[0].key).toBe("a");
+    expect(req.body.json).toBe("{\"x\":1}");
+    expect(req.auth).toEqual({ type: "bearer", token: "tok" });
+    expect(req.dirty).toBe(true);
+  });
+
+  it("restores a SOAP form spec and clears the xml draft", () => {
+    seedSoap();
+    useRequestStore.getState().applyHistorySpec("s1", {
+      kind: "soap",
+      wsdlUrl: "https://w.dev?wsdl",
+      inputElement: { namespace: "ns", local: "Op" },
+      endpoint: "https://w.dev/svc",
+      soapAction: "urn:op",
+      soapVersion: "1.1",
+      value: { sequence: [] },
+    });
+    const req = useRequestStore.getState().openRequests.s1;
+    expect(req.soap?.meta.endpoint).toBe("https://w.dev/svc");
+    expect(req.soap?.value).toEqual({ sequence: [] });
+    expect(req.soap?.xmlDraft).toBeNull();
+    expect(req.dirty).toBe(true);
+  });
+
+  it("restoring a different operation (different inputElement) nulls the schema and refetches it", async () => {
+    seedSoap();
+    const refetchedSchema = { ...leafSchema, name: "OtherOp" };
+    vi.mocked(api.getOperationSchema).mockResolvedValue(refetchedSchema as never);
+    useRequestStore.getState().applyHistorySpec("s1", {
+      kind: "soap",
+      wsdlUrl: "https://old.dev?wsdl",
+      inputElement: { namespace: "", local: "OtherOp" },
+      endpoint: "https://old.dev/svc",
+      soapAction: "urn:other",
+      soapVersion: "1.1",
+      value: { sequence: [] },
+    });
+    expect(useRequestStore.getState().openRequests.s1.soap?.schema).toBeNull();
+    expect(api.getOperationSchema).toHaveBeenCalledWith("https://old.dev?wsdl", {
+      namespace: "",
+      local: "OtherOp",
+    });
+    await vi.waitFor(() => {
+      const req = useRequestStore.getState().openRequests.s1;
+      expect(req.soap?.schema).toEqual(refetchedSchema);
+      // the restored value must survive the schema refetch
+      expect(req.soap?.value).toEqual({ sequence: [] });
+    });
+  });
+
+  it("restoring the same operation keeps the existing schema and does not refetch", () => {
+    seedSoap();
+    useRequestStore.getState().applyHistorySpec("s1", {
+      kind: "soap",
+      wsdlUrl: "https://old.dev?wsdl",
+      inputElement: { namespace: "", local: "Op" },
+      endpoint: "https://old.dev/svc",
+      soapAction: "urn:old",
+      soapVersion: "1.1",
+      value: { sequence: [] },
+    });
+    const req = useRequestStore.getState().openRequests.s1;
+    expect(req.soap?.schema).toBe(leafSchema);
+    expect(api.getOperationSchema).not.toHaveBeenCalled();
+  });
+
+  it("restores a raw SOAP envelope as the xml draft", () => {
+    seedSoap();
+    useRequestStore.getState().applyHistorySpec("s1", {
+      kind: "soapRaw",
+      endpoint: "https://w.dev/svc",
+      envelope: "<Envelope/>",
+      soapAction: "urn:op",
+      soapVersion: "1.2",
+    });
+    const req = useRequestStore.getState().openRequests.s1;
+    expect(req.soap?.xmlDraft).toBe("<Envelope/>");
+    expect(req.soap?.meta.soapVersion).toBe("1.2");
+    expect(req.dirty).toBe(true);
   });
 });

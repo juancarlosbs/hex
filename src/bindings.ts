@@ -53,9 +53,25 @@ async deleteNode(workspaceId: string, path: string[]) : Promise<Result<null, str
     else return { status: "error", error: e  as any };
 }
 },
+async duplicateNode(workspaceId: string, path: string[]) : Promise<Result<CollectionNode, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("duplicate_node", { workspaceId, path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async reorderChildren(workspaceId: string, parentPath: string[], orderedIds: string[]) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("reorder_children", { workspaceId, parentPath, orderedIds }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async moveNode(workspaceId: string, fromPath: string[], toParentPath: string[], index: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("move_node", { workspaceId, fromPath, toParentPath, index }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -77,9 +93,9 @@ async updateRequest(workspaceId: string, path: string[], content: RequestContent
     else return { status: "error", error: e  as any };
 }
 },
-async sendRequest(spec: SendSpec) : Promise<Result<HttpResponse, string>> {
+async sendRequest(workspaceId: string, environmentId: string | null, spec: SendSpec, requestId: string | null) : Promise<Result<HttpResponse, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("send_request", { spec }) };
+    return { status: "ok", data: await TAURI_INVOKE("send_request", { workspaceId, environmentId, spec, requestId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -109,9 +125,9 @@ async getOperationSchema(wsdlUrl: string, inputElement: QName) : Promise<Result<
     else return { status: "error", error: e  as any };
 }
 },
-async sendSoap(wsdlUrl: string, inputElement: QName, endpoint: string, soapAction: string, soapVersion: string, value: FormValue) : Promise<Result<HttpResponse, string>> {
+async sendSoap(workspaceId: string, environmentId: string | null, wsdlUrl: string, inputElement: QName, endpoint: string, soapAction: string, soapVersion: string, value: FormValue, requestId: string | null) : Promise<Result<HttpResponse, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("send_soap", { wsdlUrl, inputElement, endpoint, soapAction, soapVersion, value }) };
+    return { status: "ok", data: await TAURI_INVOKE("send_soap", { workspaceId, environmentId, wsdlUrl, inputElement, endpoint, soapAction, soapVersion, value, requestId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -133,9 +149,9 @@ async buildSoapEnvelope(schema: SchemaNode, soapAction: string, soapVersion: str
  * Send a raw SOAP envelope edited by hand in the XML view, bypassing the form
  * serializer. Transport metadata still follows the selected SOAP version.
  */
-async sendSoapRaw(endpoint: string, envelope: string, soapAction: string, soapVersion: string) : Promise<Result<HttpResponse, string>> {
+async sendSoapRaw(workspaceId: string, environmentId: string | null, endpoint: string, envelope: string, soapAction: string, soapVersion: string, requestId: string | null) : Promise<Result<HttpResponse, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("send_soap_raw", { endpoint, envelope, soapAction, soapVersion }) };
+    return { status: "ok", data: await TAURI_INVOKE("send_soap_raw", { workspaceId, environmentId, endpoint, envelope, soapAction, soapVersion, requestId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -171,6 +187,54 @@ async previewDefinitionUpdate(workspaceId: string, collectionId: string) : Promi
 async applyDefinitionUpdate(workspaceId: string, collectionId: string, preview: DefinitionUpdatePreview) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("apply_definition_update", { workspaceId, collectionId, preview }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listHistory(requestId: string) : Promise<Result<HistoryEntrySummary[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_history", { requestId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getHistoryEntry(entryId: number) : Promise<Result<HistoryEntry, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_history_entry", { entryId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async clearHistory(requestId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("clear_history", { requestId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listEnvironments(workspaceId: string) : Promise<Result<EnvironmentList, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_environments", { workspaceId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveEnvironment(workspaceId: string, environment: Environment) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_environment", { workspaceId, environment }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteEnvironment(workspaceId: string, id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_environment", { workspaceId, id }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -215,11 +279,46 @@ removed: string[];
 unchanged: number }
 export type DefinitionUpdatePreview = { serviceName: string; wsdlUrl: string; diff: DefinitionDiff }
 /**
+ * A named set of variables. BTreeMap keeps TOML/JSON output sorted -> stable git diffs.
+ */
+export type Environment = { id: string; name: string; variables?: Partial<{ [key in string]: string }> }
+export type EnvironmentList = { environments: Environment[]; 
+/**
+ * Per-file load failures ("file.toml: message") — corrupt files are
+ * reported, never silently skipped (F2 spirit).
+ */
+errors: string[] }
+/**
  * The instance the user filled in. Mirrors `NodeKind`; the serializer walks the
  * pair (SchemaNode, FormValue). See docs/domain-model.md §3.
  */
 export type FormValue = { leaf: string | null } | { sequence: FormValue[] } | { choice: { branch: number; value: FormValue } } | { repeated: FormValue[] } | "nil" | "omitted" | { raw: string }
-export type HttpResponse = { status: number; statusText: string; timeMs: number; sizeBytes: number; headers: Partial<{ [key in string]: string }>; body: string; timing: TimingBreakdown; fault: SoapFault | null }
+/**
+ * Full entry, loaded on demand. `response` and `error` are mutually exclusive.
+ */
+export type HistoryEntry = { id: number; executedAtMs: number; spec: HistorySpec; response: HttpResponse | null; error: string | null }
+/**
+ * Light row for the drawer list — no bodies.
+ */
+export type HistoryEntrySummary = { id: number; executedAtMs: number; 
+/**
+ * "GET"/"POST"/… for REST, "SOAP" for both SOAP paths.
+ */
+method: string; 
+/**
+ * None when the send failed before an HTTP response existed.
+ */
+status: number | null; durationMs: number | null; sizeBytes: number | null; error: string | null }
+/**
+ * What was sent — enough to restore the request in the editor.
+ */
+export type HistorySpec = { kind: "rest"; spec: SendSpec } | { kind: "soap"; wsdlUrl: string; inputElement: QName; endpoint: string; soapAction: string; soapVersion: string; value: FormValue } | { kind: "soapRaw"; endpoint: string; envelope: string; soapAction: string; soapVersion: string }
+export type HttpResponse = { status: number; statusText: string; timeMs: number; sizeBytes: number; headers: Partial<{ [key in string]: string }>; body: string; timing: TimingBreakdown; fault: SoapFault | null; 
+/**
+ * True when a history entry's body was cut at 1 MB before storing.
+ * Always false on live responses.
+ */
+truncated?: boolean }
 export type KeyValueEntry = { id: string; key: string; value: string; description?: string | null; enabled: boolean; type?: string | null }
 export type MaxOccurs = { bounded: number } | "unbounded"
 export type NodeKind = { leaf: { xsdType: XsdType; enumValues: string[]; default: string | null; fixed: string | null } } | { sequence: SchemaNode[] } | { choice: SchemaNode[] } | "any"

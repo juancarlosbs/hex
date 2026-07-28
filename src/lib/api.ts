@@ -68,6 +68,9 @@ export const api = {
   reorderChildren: (workspaceId: string, parentPath: string[], orderedIds: string[]) =>
     unwrap(commands.reorderChildren(workspaceId, parentPath, orderedIds)),
 
+  moveNode: (workspaceId: string, fromPath: string[], toParentPath: string[], index: number) =>
+    unwrap(commands.moveNode(workspaceId, fromPath, toParentPath, index)),
+
   getRequest: (workspaceId: string, path: string[]) =>
     unwrap(commands.getRequest(workspaceId, path)),
 

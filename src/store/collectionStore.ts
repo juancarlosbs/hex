@@ -12,6 +12,7 @@ interface CollectionState {
   remove: (workspaceId: string, path: string[]) => Promise<void>;
   duplicate: (workspaceId: string, path: string[]) => Promise<void>;
   reorder: (workspaceId: string, parentPath: string[], orderedIds: string[]) => Promise<void>;
+  move: (workspaceId: string, fromPath: string[], toParentPath: string[], index: number) => Promise<boolean>;
   updateRequestMeta: (path: string[], method: string, url: string) => void;
   setActiveRequest: (id: string | null) => void;
 }
@@ -96,6 +97,22 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     }
   },
 
+  async move(workspaceId, fromPath, toParentPath, index) {
+    const prev = get().collections;
+    set((s) => ({ collections: moveInTree(s.collections, fromPath, toParentPath, index) }));
+    try {
+      await api.moveNode(workspaceId, fromPath, toParentPath, index);
+      return true;
+    } catch (e) {
+      console.error("move failed:", e);
+      set({ collections: prev });
+      // partial fs failure may have already moved the node on disk: re-fetch
+      // so the UI converges to reality instead of showing a stale snapshot.
+      await get().load(workspaceId);
+      return false;
+    }
+  },
+
   updateRequestMeta(path, method, url) {
     set((s) => ({ collections: updateRequestNode(s.collections, path, method, url) }));
   },
@@ -152,6 +169,42 @@ function updateRequestNode(tree: CollectionNode[], path: string[], method: strin
   return tree.map((n) => {
     if (n.type !== "folder" || n.id !== path[0]) return n;
     return { ...n, children: updateRequestNode(n.children, path.slice(1), method, url) };
+  });
+}
+
+export function moveInTree(
+  tree: CollectionNode[],
+  fromPath: string[],
+  toParentPath: string[],
+  index: number
+): CollectionNode[] {
+  const node = findNode(tree, fromPath);
+  if (!node) return tree;
+  return insertNodeAt(removeNode(tree, fromPath), toParentPath, node, index);
+}
+
+function findNode(tree: CollectionNode[], path: string[]): CollectionNode | null {
+  const [head, ...rest] = path;
+  const n = tree.find((x) => x.id === head);
+  if (!n) return null;
+  if (rest.length === 0) return n;
+  return n.type === "folder" ? findNode(n.children, rest) : null;
+}
+
+function insertNodeAt(
+  tree: CollectionNode[],
+  parentPath: string[],
+  node: CollectionNode,
+  index: number
+): CollectionNode[] {
+  if (parentPath.length === 0) {
+    const out = [...tree];
+    out.splice(Math.min(index, out.length), 0, node);
+    return out;
+  }
+  return tree.map((n) => {
+    if (n.type !== "folder" || n.id !== parentPath[0]) return n;
+    return { ...n, children: insertNodeAt(n.children, parentPath.slice(1), node, index) };
   });
 }
 

@@ -122,6 +122,26 @@ pub fn reorder_children(
 
 #[tauri::command]
 #[specta::specta]
+pub fn move_node(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    from_path: Vec<String>,
+    to_parent_path: Vec<String>,
+    index: u32,
+) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    collection::move_node(
+        &dir,
+        &workspace_id,
+        from_path,
+        to_parent_path,
+        index as usize,
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn get_request(
     app: tauri::AppHandle,
     workspace_id: String,

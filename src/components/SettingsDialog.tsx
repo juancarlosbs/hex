@@ -13,18 +13,9 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import { cn } from "../lib/utils";
+import { envDotClass } from "../lib/envColor";
 import { useWorkspaceStore, type Workspace } from "../store/workspaceStore";
 import { useEnvStore } from "../store/envStore";
-
-const ENV_DOT_COLORS: Record<string, string> = {
-  Development: "#28C840",
-  Staging: "#FEBC2E",
-  Production: "#FF5F57",
-};
-
-function envDotColor(name: string): string {
-  return ENV_DOT_COLORS[name] ?? "#B8B9B6";
-}
 
 interface Props {
   open: boolean;
@@ -362,10 +353,7 @@ function EnvironmentsSection({ onClose }: { onClose: () => void }) {
             <ChevronLeft size={13} />
             <span className="text-[11px]">Back</span>
           </button>
-          <span
-            className="w-2 h-2 rounded-full shrink-0"
-            style={{ backgroundColor: envDotColor(selected.name) }}
-          />
+          <span className={cn("w-2 h-2 rounded-full shrink-0", envDotClass(selected.name))} />
           <span className="text-[13px] font-semibold text-foreground">
             {selected.name}
           </span>
@@ -552,10 +540,7 @@ function EnvironmentsSection({ onClose }: { onClose: () => void }) {
               className="flex items-center gap-3 px-3 py-[10px] rounded-[6px] hover:bg-secondary cursor-pointer group"
               onClick={() => openEnv(env.id)}
             >
-              <span
-                className="w-2 h-2 rounded-full shrink-0"
-                style={{ backgroundColor: envDotColor(env.name) }}
-              />
+              <span className={cn("w-2 h-2 rounded-full shrink-0", envDotClass(env.name))} />
               <span className="flex-1 text-[13px] font-medium text-foreground">
                 {env.name}
               </span>
@@ -605,10 +590,7 @@ export function SettingsDialog({ open, onClose, initialSection }: Props) {
     >
       <div className="w-[780px] h-[520px] rounded-[6px] bg-card border border-border overflow-hidden flex">
         {/* Sidebar */}
-        <div
-          className="w-[200px] shrink-0 flex flex-col gap-[2px] p-3 border-r border-border"
-          style={{ backgroundColor: "#141414" }}
-        >
+        <div className="w-[200px] shrink-0 flex flex-col gap-[2px] p-3 border-r border-border bg-sidebar">
           <span className="text-[10px] font-semibold text-muted uppercase tracking-[0.5px] px-2 py-1">
             Settings
           </span>

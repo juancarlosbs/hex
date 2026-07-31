@@ -38,6 +38,7 @@ SOAP op:  --soap-op #A371F7   (+ --soap-op-surface #1C1530)
 Status:   2xx #3FB950 · 3xx #58A6FF · 4xx #E3B341 · 5xx #FF5C33
 Timing:   dns #58A6FF · tcp #A371F7 · tls #E3B341 · ttfb #FF8400 · download #3FB950
 Field:    --field-required #FF5C33 · --field-optional #6E7681
+Env:      development #28C840 · staging #FEBC2E · production #FF5F57 · neutral #B8B9B6
 Feedback: error #24100B/#FF5C33 · info #222229/#B2B2FF · success #222924/#B6FFCE · warning #291C0F/#FF8400
 ```
 

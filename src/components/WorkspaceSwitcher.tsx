@@ -67,7 +67,7 @@ export function WorkspaceSwitcher({ onAddWorkspace, onManageWorkspaces, classNam
       </div>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 w-[220px] rounded-md bg-[#1A1A1A] border border-[#2E2E2E] shadow-lg z-50 overflow-hidden">
+        <div className="absolute top-full left-0 mt-1 w-[220px] rounded-md bg-card border border-border shadow-lg z-50 overflow-hidden">
           <div className="flex items-center justify-between px-3 py-[10px]">
             <span className="text-[11px] font-semibold text-muted uppercase tracking-[0.5px]">
               Workspaces
@@ -80,7 +80,7 @@ export function WorkspaceSwitcher({ onAddWorkspace, onManageWorkspaces, classNam
           </div>
 
           <div className="px-3 pb-2">
-            <div className="flex items-center gap-[6px] bg-[#2E2E2E] border border-[#2E2E2E] rounded-md px-2 py-[6px]">
+            <div className="flex items-center gap-[6px] bg-secondary border border-border rounded-md px-2 py-[6px]">
               <Search size={12} className="text-muted shrink-0" />
               <input
                 className="flex-1 bg-transparent text-[12px] text-foreground placeholder:text-muted outline-none"
@@ -99,7 +99,7 @@ export function WorkspaceSwitcher({ onAddWorkspace, onManageWorkspaces, classNam
                   key={ws.id}
                   className={cn(
                     "flex items-center justify-between gap-2 px-2 py-[7px] rounded-md cursor-pointer",
-                    isActive ? "bg-[#2a2a30]" : "hover:bg-[#2E2E2E]"
+                    isActive ? "bg-sidebar-accent" : "hover:bg-secondary"
                   )}
                   onClick={() => { setActive(ws.id); setOpen(false); setSearch(""); }}
                 >
@@ -116,7 +116,7 @@ export function WorkspaceSwitcher({ onAddWorkspace, onManageWorkspaces, classNam
           </div>
 
           <div
-            className="flex items-center gap-[6px] px-3 py-2 border-t border-[#2E2E2E] cursor-pointer hover:bg-[#2E2E2E]"
+            className="flex items-center gap-[6px] px-3 py-2 border-t border-border cursor-pointer hover:bg-secondary"
             onClick={() => { setOpen(false); onManageWorkspaces(); }}
           >
             <Settings2 size={13} className="text-muted" />

@@ -5,15 +5,19 @@ import { cn } from "../lib/utils";
 import { useWorkspaceStore } from "../store/workspaceStore";
 
 const triggerVariants = cva(
-  "flex items-center justify-between gap-2 w-[162px] rounded-[4px] cursor-pointer shrink-0 border transition-colors select-none px-[10px] py-[6px]",
+  "flex items-center justify-between gap-2 rounded-[4px] cursor-pointer shrink-0 border transition-colors select-none px-[10px] py-[6px]",
   {
     variants: {
       state: {
         idle: "bg-secondary border-border hover:bg-secondary/80",
         open: "bg-secondary border-border",
       },
+      compact: {
+        true: "",
+        false: "w-[162px]",
+      },
     },
-    defaultVariants: { state: "idle" },
+    defaultVariants: { state: "idle", compact: false },
   }
 );
 
@@ -23,7 +27,7 @@ interface WorkspaceSwitcherProps extends VariantProps<typeof triggerVariants> {
   className?: string;
 }
 
-export function WorkspaceSwitcher({ onAddWorkspace, onManageWorkspaces, className }: WorkspaceSwitcherProps) {
+export function WorkspaceSwitcher({ onAddWorkspace, onManageWorkspaces, compact, className }: WorkspaceSwitcherProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -51,14 +55,16 @@ export function WorkspaceSwitcher({ onAddWorkspace, onManageWorkspaces, classNam
       style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
     >
       <div
-        className={cn(triggerVariants({ state: open ? "open" : "idle" }), className)}
+        className={cn(triggerVariants({ state: open ? "open" : "idle", compact }), className)}
         onClick={() => setOpen((v) => !v)}
       >
         <div className="flex items-center gap-2 min-w-0">
           <Layers size={14} className="text-muted shrink-0" />
-          <span className="text-[13px] font-medium text-foreground truncate">
-            {active?.name ?? "No Workspace"}
-          </span>
+          {!compact && (
+            <span className="text-[13px] font-medium text-foreground truncate">
+              {active?.name ?? "No Workspace"}
+            </span>
+          )}
         </div>
         <ChevronDown
           size={14}

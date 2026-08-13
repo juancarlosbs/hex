@@ -5,8 +5,10 @@ import { EnvSelector } from "./EnvSelector";
 import { AddWorkspaceModal } from "./AddWorkspaceModal";
 import { SettingsDialog } from "./SettingsDialog";
 import { useEnvStore } from "../store/envStore";
+import { COMPACT_MQ, useMediaQuery } from "../lib/useMediaQuery";
 
 export function Titlebar() {
+  const compact = useMediaQuery(COMPACT_MQ);
   const environments = useEnvStore((s) => s.environments);
   const activeEnvId = useEnvStore((s) => s.activeId);
   const setActiveEnv = useEnvStore((s) => s.setActive);
@@ -23,6 +25,7 @@ export function Titlebar() {
         <div className="w-17 shrink-0" />
 
         <WorkspaceSwitcher
+          compact={compact}
           onAddWorkspace={() => setAddOpen(true)}
           onManageWorkspaces={() => setSettingsSection("workspaces")}
         />
@@ -36,6 +39,7 @@ export function Titlebar() {
           <EnvSelector
             env={activeEnv}
             envs={environments}
+            compact={compact}
             onSelect={setActiveEnv}
             onManage={() => setSettingsSection("environments")}
           />

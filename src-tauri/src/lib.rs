@@ -2,6 +2,7 @@ mod commands;
 mod domain;
 mod engine;
 mod persistence;
+mod postman;
 mod wsdl;
 
 fn specta_builder() -> tauri_specta::Builder {

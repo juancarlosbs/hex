@@ -1,0 +1,135 @@
+{
+  "info": {
+    "name": "Sample API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Basic Auth Request",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "https://api.example.com/basic", "query": [] },
+            "header": [
+              { "key": "X-Test", "value": "1", "disabled": false },
+              { "key": "X-Off", "value": "2", "disabled": true }
+            ],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "alice" },
+                { "key": "password", "value": "secret" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Bearer Request",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "https://api.example.com/bearer" },
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "tok123" }]
+            }
+          }
+        },
+        {
+          "name": "ApiKey Request",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "https://api.example.com/apikey" },
+            "auth": {
+              "type": "apikey",
+              "apikey": [
+                { "key": "key", "value": "X-Api-Key" },
+                { "key": "value", "value": "abc" },
+                { "key": "in", "value": "header" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "OAuth2 Request",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "https://api.example.com/oauth2" },
+            "auth": { "type": "oauth2" }
+          }
+        },
+        {
+          "name": "Nested",
+          "item": [
+            {
+              "name": "Deep Request",
+              "request": {
+                "method": "GET",
+                "url": { "raw": "https://api.example.com/deep" }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Bodies",
+      "item": [
+        {
+          "name": "Raw JSON Body",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "https://api.example.com/raw" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"a\":1}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "Urlencoded Body",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "https://api.example.com/form" },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [{ "key": "a", "value": "1", "disabled": false }]
+            }
+          }
+        },
+        {
+          "name": "Formdata Body",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "https://api.example.com/multipart" },
+            "body": {
+              "mode": "formdata",
+              "formdata": [{ "key": "file", "value": "x", "disabled": false }]
+            }
+          }
+        },
+        {
+          "name": "GraphQL Body",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "https://api.example.com/graphql" },
+            "body": {
+              "mode": "graphql",
+              "graphql": { "query": "{ hello }", "variables": "{}" }
+            }
+          }
+        },
+        {
+          "name": "File Body",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "https://api.example.com/file" },
+            "body": { "mode": "file" }
+          }
+        }
+      ]
+    }
+  ]
+}

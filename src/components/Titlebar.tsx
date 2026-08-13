@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Search, Settings } from "lucide-react";
+import { Settings } from "lucide-react";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { EnvSelector } from "./EnvSelector";
 import { AddWorkspaceModal } from "./AddWorkspaceModal";
@@ -39,12 +39,6 @@ export function Titlebar() {
             onSelect={setActiveEnv}
             onManage={() => setSettingsSection("environments")}
           />
-
-          <div className="flex items-center gap-2 px-2 py-[6px] w-[260px] rounded-[4px] bg-secondary border border-border cursor-text">
-            <Search size={13} className="text-muted shrink-0" />
-            <span className="flex-1 text-[12px] text-muted">Search</span>
-            <span className="text-[11px] text-muted">⌘K</span>
-          </div>
 
           <div
             className="p-[6px] rounded-[4px] cursor-pointer hover:bg-secondary"

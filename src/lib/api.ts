@@ -5,6 +5,7 @@ import type {
   DefinitionUpdatePreview,
   Environment,
   FormValue,
+  PostmanImportPreview,
   QName,
   RequestContent,
   RequestKind,
@@ -26,6 +27,7 @@ export type {
   MaxOccurs,
   NodeKind,
   Occurs,
+  PostmanImportPreview,
   RequestContent,
   RequestKind,
   SchemaNode,
@@ -91,6 +93,12 @@ export const api = {
 
   confirmWsdlImport: (workspaceId: string, preview: WsdlImportPreview) =>
     unwrap(commands.confirmWsdlImport(workspaceId, preview)),
+
+  importPostmanCollection: (collectionJson: string, environmentJson: string | null) =>
+    unwrap(commands.importPostmanCollection(collectionJson, environmentJson)),
+
+  confirmPostmanImport: (workspaceId: string, preview: PostmanImportPreview) =>
+    unwrap(commands.confirmPostmanImport(workspaceId, preview)),
 
   getOperationSchema: (wsdlUrl: string, inputElement: QName) =>
     unwrap(commands.getOperationSchema(wsdlUrl, inputElement)),

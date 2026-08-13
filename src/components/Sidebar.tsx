@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
-import { FolderPlus, Globe, Plus, RefreshCw, Search } from "lucide-react";
+import { FileJson, FolderPlus, Globe, Plus, RefreshCw, Search } from "lucide-react";
 import { CollectionTree, CollectionTreeHandle } from "./CollectionTree";
 import { ImportWsdlModal } from "./ImportWsdlModal";
+import { ImportPostmanModal } from "./ImportPostmanModal";
 import { UpdateDefinitionModal } from "./UpdateDefinitionModal";
 import { useWorkspaceStore } from "../store/workspaceStore";
 
@@ -9,6 +10,7 @@ export function Sidebar() {
   const workspaceId = useWorkspaceStore((s) => s.activeId);
   const treeRef = useRef<CollectionTreeHandle>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [postmanImportOpen, setPostmanImportOpen] = useState(false);
 
   return (
     <aside
@@ -42,6 +44,14 @@ export function Sidebar() {
           >
             <title>Import WSDL</title>
           </Globe>
+          <FileJson
+            size={14}
+            className="text-sidebar-muted cursor-pointer hover:text-foreground"
+            aria-label="Import Postman Collection"
+            onClick={() => setPostmanImportOpen(true)}
+          >
+            <title>Import Postman Collection</title>
+          </FileJson>
         </div>
       </div>
 
@@ -67,6 +77,7 @@ export function Sidebar() {
       </div>
 
       <ImportWsdlModal open={importOpen} onClose={() => setImportOpen(false)} />
+      <ImportPostmanModal open={postmanImportOpen} onClose={() => setPostmanImportOpen(false)} />
       <UpdateDefinitionModal />
     </aside>
   );

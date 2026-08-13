@@ -1,5 +1,6 @@
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { Sidebar } from "./Sidebar";
+import { RequestTabsBar } from "./request/RequestTabsBar";
 import { RequestPanel } from "./request/RequestPanel";
 import { ResponsePanel } from "./response/ResponsePanel";
 import { HistoryDrawer } from "./response/HistoryDrawer";
@@ -10,7 +11,12 @@ export function CentralPanel() {
       <Sidebar />
       <Group orientation="horizontal" id="hex-central" className="flex flex-1 min-w-0 h-full">
         <Panel defaultSize={60} minSize={30}>
-          <RequestPanel />
+          <div className="flex flex-col h-full">
+            <RequestTabsBar />
+            <div className="flex-1 min-h-0">
+              <RequestPanel />
+            </div>
+          </div>
         </Panel>
         <Separator className="w-[1px] bg-border hover:bg-primary/40 transition-colors" />
         <Panel defaultSize={40} minSize={20}>

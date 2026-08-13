@@ -28,10 +28,11 @@ interface EnvSelectorProps extends VariantProps<typeof triggerVariants> {
   envs: Environment[];
   onSelect: (id: string | null) => void;
   onManage?: () => void;
+  compact?: boolean;
   className?: string;
 }
 
-export function EnvSelector({ env, envs, onSelect, onManage, className }: EnvSelectorProps) {
+export function EnvSelector({ env, envs, onSelect, onManage, compact, className }: EnvSelectorProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -63,9 +64,11 @@ export function EnvSelector({ env, envs, onSelect, onManage, className }: EnvSel
         ) : (
           <Layers2 size={13} className="text-foreground" />
         )}
-        <span className="text-[12px] font-medium text-foreground">
-          {env?.name ?? "No Environment"}
-        </span>
+        {!compact && (
+          <span className="text-[12px] font-medium text-foreground">
+            {env?.name ?? "No Environment"}
+          </span>
+        )}
         <ChevronDown
           size={12}
           className={cn("text-muted transition-transform", open && "rotate-180")}

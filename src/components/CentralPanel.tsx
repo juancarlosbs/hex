@@ -6,10 +6,10 @@ import { RequestTabsBar } from "./request/RequestTabsBar";
 import { RequestPanel } from "./request/RequestPanel";
 import { ResponsePanel } from "./response/ResponsePanel";
 import { HistoryDrawer } from "./response/HistoryDrawer";
-import { useMediaQuery } from "../lib/useMediaQuery";
+import { COMPACT_MQ, useMediaQuery } from "../lib/useMediaQuery";
 
 export function CentralPanel() {
-  const compact = useMediaQuery("(max-width: 899px)");
+  const compact = useMediaQuery(COMPACT_MQ);
   return compact ? <CompactLayout /> : <WideLayout />;
 }
 

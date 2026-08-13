@@ -31,6 +31,10 @@ When compact:
 
 The drawer state resets naturally when the breakpoint flips back to wide (component branch unmounts).
 
+### Titlebar — compact triggers
+
+Per the `App — Compact` titlebar overrides in the design, below the breakpoint the workspace switcher and env selector collapse to icon + chevron (name/label text hidden, trigger width fits content). Both components take a `compact` prop; `Titlebar` derives it from the same `useMediaQuery(COMPACT_MQ)` breakpoint.
+
 ## Testing
 
 - `useMediaQuery` and `ActivityBar` unit tests (Vitest + Testing Library, `matchMedia` mocked).

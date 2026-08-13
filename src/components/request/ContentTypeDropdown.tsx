@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Braces, Check, ChevronDown, ChevronUp, Code, Paperclip, LucideIcon } from "lucide-react";
+import { Braces, Check, ChevronDown, ChevronUp, Code, FileText, Paperclip, LucideIcon } from "lucide-react";
 import { BodyMode } from "../../lib/request-types";
 
 interface ContentTypeOption {
@@ -12,6 +12,7 @@ const OPTIONS: ContentTypeOption[] = [
   { mode: "json", icon: Code, label: "application/json" },
   { mode: "form-urlencoded", icon: Braces, label: "application/x-www-form-urlencoded" },
   { mode: "form-multipart", icon: Paperclip, label: "multipart/form-data" },
+  { mode: "raw", icon: FileText, label: "raw" },
 ];
 
 interface ContentTypeDropdownProps {

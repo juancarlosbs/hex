@@ -449,7 +449,7 @@ function fromFile(data: RequestFileData, path: string[]): OpenRequest {
     // here so store consumers never see body.form === undefined
     body: data.body
       ? {
-          mode: mode === "form-urlencoded" || mode === "form-multipart" ? mode : "json",
+          mode: mode === "form-urlencoded" || mode === "form-multipart" || mode === "raw" ? mode : "json",
           json: data.body.json,
           form: (data.body.form ?? []).map(toKeyValue),
         }

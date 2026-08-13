@@ -119,6 +119,7 @@ pub fn parse(url: &str, xml: &str) -> Result<WsdlDocument, WsdlError> {
     if operations.is_empty() {
         return Err(not_found("wsdl:operation"));
     }
+    operations.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
     Ok(WsdlDocument {
         service_name,

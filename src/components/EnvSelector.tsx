@@ -3,6 +3,7 @@ import { Ban, Check, ChevronDown, Layers2, Plus, Settings2 } from "lucide-react"
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../lib/utils";
 import type { Environment } from "../store/envStore";
+import { envDotClass } from "../lib/envColor";
 
 const triggerVariants = cva(
   "flex items-center gap-[6px] rounded-[4px] border cursor-pointer transition-colors select-none px-[10px] py-[5px]",
@@ -16,12 +17,6 @@ const triggerVariants = cva(
     defaultVariants: { state: "idle" },
   }
 );
-
-const ENV_COLORS: Record<string, string> = {
-  Development: "#28C840",
-  Staging: "#FEBC2E",
-  Production: "#FF5F57",
-};
 
 interface EnvSelectorProps extends VariantProps<typeof triggerVariants> {
   env: Environment | null;
@@ -46,7 +41,7 @@ export function EnvSelector({ env, envs, onSelect, onManage, className }: EnvSel
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
 
-  const dotColor = env ? (ENV_COLORS[env.name] ?? "#B8B9B6") : null;
+  const dotClass = env ? envDotClass(env.name) : null;
 
   return (
     <div ref={ref} className="relative">
@@ -55,11 +50,8 @@ export function EnvSelector({ env, envs, onSelect, onManage, className }: EnvSel
         className={cn(triggerVariants({ state: open ? "open" : "idle" }), className)}
         onClick={() => setOpen((v) => !v)}
       >
-        {dotColor ? (
-          <span
-            className="w-2 h-2 rounded-full shrink-0"
-            style={{ backgroundColor: dotColor }}
-          />
+        {dotClass ? (
+          <span className={cn("w-2 h-2 rounded-full shrink-0", dotClass)} />
         ) : (
           <Layers2 size={13} className="text-foreground" />
         )}
@@ -74,7 +66,7 @@ export function EnvSelector({ env, envs, onSelect, onManage, className }: EnvSel
 
       {/* Dropdown */}
       {open && (
-        <div className="absolute top-full right-0 mt-1 w-[220px] rounded-md bg-[#1A1A1A] border border-[#2E2E2E] shadow-lg z-50 overflow-hidden">
+        <div className="absolute top-full right-0 mt-1 w-[220px] rounded-md bg-card border border-border shadow-lg z-50 overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-[10px]">
             <span className="text-[11px] font-semibold text-muted uppercase tracking-[0.5px]">
@@ -89,7 +81,7 @@ export function EnvSelector({ env, envs, onSelect, onManage, className }: EnvSel
             <div
               className={cn(
                 "flex items-center gap-2 px-2 py-[7px] rounded-md cursor-pointer",
-                env === null ? "bg-[#2a2a30]" : "hover:bg-[#2E2E2E]"
+                env === null ? "bg-sidebar-accent" : "hover:bg-secondary"
               )}
               onClick={() => {
                 onSelect(null);
@@ -102,13 +94,13 @@ export function EnvSelector({ env, envs, onSelect, onManage, className }: EnvSel
 
             {envs.map((e) => {
               const active = e.id === env?.id;
-              const color = ENV_COLORS[e.name] ?? "#B8B9B6";
+              const dotCls = envDotClass(e.name);
               return (
                 <div
                   key={e.id}
                   className={cn(
                     "flex items-center justify-between gap-2 px-2 py-[7px] rounded-md cursor-pointer",
-                    active ? "bg-[#2a2a30]" : "hover:bg-[#2E2E2E]"
+                    active ? "bg-sidebar-accent" : "hover:bg-secondary"
                   )}
                   onClick={() => {
                     onSelect(e.id);
@@ -116,10 +108,7 @@ export function EnvSelector({ env, envs, onSelect, onManage, className }: EnvSel
                   }}
                 >
                   <div className="flex items-center gap-2">
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0"
-                      style={{ backgroundColor: color }}
-                    />
+                    <span className={cn("w-2 h-2 rounded-full shrink-0", dotCls)} />
                     <span
                       className={cn(
                         "text-[12px]",
@@ -137,7 +126,7 @@ export function EnvSelector({ env, envs, onSelect, onManage, className }: EnvSel
 
           {/* Footer */}
           <div
-            className="flex items-center gap-[6px] px-3 py-2 border-t border-[#2E2E2E] cursor-pointer hover:bg-[#2E2E2E]"
+            className="flex items-center gap-[6px] px-3 py-2 border-t border-border cursor-pointer hover:bg-secondary"
             onClick={() => { setOpen(false); onManage?.(); }}
           >
             <Settings2 size={13} className="text-muted" />

@@ -95,7 +95,7 @@ react@19  react-dom@19  vite  typescript
 ### UI / design system (ADR-014 — matches design tokens)
 > Tokens ARE shadcn variables (`--background/-foreground/-card/-primary/-secondary/`
 > `-muted/-accent/-destructive/-border/-input/-ring/-sidebar*/-popover`) + semantics
-> (`--method-*`, `--soap-op`, `--status-*`, `--timing-*`, `--field-*`). Single source: `src/App.css`.
+> (`--method-*`, `--soap-op`, `--status-*`, `--timing-*`, `--field-*`, `--env-*`). Single source: `src/App.css`.
 ```
 tailwindcss              # NOTE: v4 — shadcn setup differs from v3
 shadcn/ui                # via CLI; brings Radix underneath

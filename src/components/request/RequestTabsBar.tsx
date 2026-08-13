@@ -1,6 +1,6 @@
 // src/components/request/RequestTabsBar.tsx
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { Hexagon, X } from "lucide-react";
 import { useRequestStore } from "../../store/requestStore";
 import { useCollectionStore } from "../../store/collectionStore";
 
@@ -58,9 +58,13 @@ export function RequestTabsBar() {
               className={`flex items-center gap-[7px] px-[10px] py-[7px] rounded-[4px] cursor-pointer select-none shrink-0
                 ${active ? "bg-background border border-border" : "bg-transparent border border-transparent"}`}
             >
-              <span className={`text-[10px] font-bold ${METHOD_COLORS[req.method] ?? "text-muted"}`}>
-                {req.method}
-              </span>
+              {req.soap ? (
+                <Hexagon size={13} className="text-soap-op shrink-0" />
+              ) : (
+                <span className={`text-[10px] font-bold ${METHOD_COLORS[req.method] ?? "text-muted"}`}>
+                  {req.method}
+                </span>
+              )}
               <span className={`text-[12px] ${active ? "text-foreground font-semibold" : "text-muted"}`}>
                 {req.name}
               </span>

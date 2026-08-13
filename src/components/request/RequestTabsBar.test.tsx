@@ -64,6 +64,22 @@ describe("RequestTabsBar", () => {
     expect(useRequestStore.getState().order).toEqual(["r1"]);
   });
 
+  it("renders a hexagon instead of the method for SOAP tabs", () => {
+    const soap = {
+      ...makeEmptyRequest("s1", "GetBalance", "POST"),
+      soap: {
+        meta: { wsdlUrl: "", inputElement: { namespace: "", local: "" }, endpoint: "", soapAction: "", soapVersion: "1.1" },
+        schema: null,
+        value: "omitted" as const,
+        xmlDraft: null,
+      },
+    };
+    useRequestStore.setState({ openRequests: { s1: soap }, order: ["s1"], activeId: "s1" });
+    const { container } = render(<RequestTabsBar />);
+    expect(container.querySelector("svg.lucide-hexagon")).toBeTruthy();
+    expect(screen.queryByText("POST")).toBeNull();
+  });
+
   it("renders nothing when no requests are open", () => {
     const { container } = render(<RequestTabsBar />);
     expect(container.firstChild).toBeNull();

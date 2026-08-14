@@ -13,6 +13,7 @@ interface PostmanImportState {
   phase: Phase;
   importCollection: (collectionJson: string, environmentJson: string | null) => Promise<void>;
   confirm: (workspaceId: string) => Promise<void>;
+  setError: (message: string) => void;
   reset: () => void;
 }
 
@@ -42,6 +43,10 @@ export const usePostmanImportStore = create<PostmanImportState>((set, get) => ({
     } catch (e) {
       set({ phase: { state: "error", message: String(e) } });
     }
+  },
+
+  setError(message) {
+    set({ phase: { state: "error", message } });
   },
 
   reset() {

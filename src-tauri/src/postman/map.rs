@@ -16,6 +16,12 @@ pub fn map_collection(
 ) -> (String, Vec<CollectionNode>, Vec<RequestFile>, ImportSummary) {
     let mut requests = Vec::new();
     let mut summary = ImportSummary::default();
+    if pc.auth.is_some() {
+        summary.skipped.push(
+            "Collection-level auth is not imported — requests inheriting it need auth configured manually"
+                .into(),
+        );
+    }
     let nodes = pc
         .item
         .into_iter()
@@ -29,7 +35,19 @@ fn map_item(
     requests: &mut Vec<RequestFile>,
     summary: &mut ImportSummary,
 ) -> CollectionNode {
+    if !item.event.is_empty() || item.request.as_ref().is_some_and(|r| !r.event.is_empty()) {
+        summary.skipped.push(format!(
+            "Item \"{}\": pre-request/test scripts are not imported",
+            item.name
+        ));
+    }
     if let Some(children) = item.item {
+        if item.auth.is_some() {
+            summary.skipped.push(format!(
+                "Folder \"{}\": folder-level auth is not imported — requests inheriting it need auth configured manually",
+                item.name
+            ));
+        }
         let mapped = children
             .into_iter()
             .map(|c| map_item(c, requests, summary))
@@ -95,17 +113,15 @@ fn map_url(url: Option<PostmanUrl>) -> (String, Vec<KeyValueEntry>) {
     match url {
         Some(PostmanUrl::Raw(raw)) => (raw, vec![]),
         Some(PostmanUrl::Detailed { raw, query }) => {
-            let params = query
-                .into_iter()
-                .map(|q| KeyValueEntry {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    key: q.key,
-                    value: q.value,
-                    description: None,
-                    enabled: !q.disabled,
-                    entry_type: None,
-                })
-                .collect();
+            let params: Vec<KeyValueEntry> = query.into_iter().map(map_key_value).collect();
+            // Postman mirrors the query string in both `raw` and `query`; keep
+            // `params` as the single source of truth so the engine (which appends
+            // params onto the URL) doesn't send each pair twice.
+            let raw = if params.is_empty() {
+                raw
+            } else {
+                raw.split('?').next().unwrap_or(&raw).to_string()
+            };
             (raw, params)
         }
         None => (String::new(), vec![]),
@@ -352,6 +368,65 @@ mod tests {
         assert_eq!(body.mode, "raw");
         assert!(body.json.contains("{ hello }"));
         assert!(body.json.contains("{}")); // variables appended
+    }
+
+    #[test]
+    fn detailed_url_drops_the_query_string_mirrored_in_the_query_array() {
+        let (url, params) = map_url(Some(PostmanUrl::Detailed {
+            raw: "https://api.example.com/search?q=foo".into(),
+            query: vec![PostmanKeyValue {
+                key: "q".into(),
+                value: "foo".into(),
+                disabled: false,
+            }],
+        }));
+        assert_eq!(url, "https://api.example.com/search");
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0].key, "q");
+        assert_eq!(params[0].value, "foo");
+    }
+
+    #[test]
+    fn detailed_url_without_query_array_keeps_its_raw_query_string() {
+        let (url, params) = map_url(Some(PostmanUrl::Detailed {
+            raw: "https://api.example.com/search?q=foo".into(),
+            query: vec![],
+        }));
+        assert_eq!(url, "https://api.example.com/search?q=foo");
+        assert!(params.is_empty());
+    }
+
+    #[test]
+    fn scripts_are_reported_as_skipped() {
+        let json = r#"{"info":{"name":"C"},"item":[
+            {"name":"Scripted","event":[{"listen":"test","script":{"exec":[]}}],
+             "request":{"method":"GET","url":"https://api.dev"}}]}"#;
+        let (_, _, _, summary) = map_collection(parse_collection(json).unwrap());
+        assert!(summary
+            .skipped
+            .iter()
+            .any(|s| s.contains("Scripted") && s.contains("scripts are not imported")));
+    }
+
+    #[test]
+    fn collection_level_auth_is_reported_as_skipped() {
+        let json = r#"{"info":{"name":"C"},"auth":{"type":"bearer"},"item":[]}"#;
+        let (_, _, _, summary) = map_collection(parse_collection(json).unwrap());
+        assert!(summary
+            .skipped
+            .iter()
+            .any(|s| s.contains("Collection-level auth is not imported")));
+    }
+
+    #[test]
+    fn folder_level_auth_is_reported_as_skipped() {
+        let json = r#"{"info":{"name":"C"},"item":[
+            {"name":"Secured","auth":{"type":"bearer"},"item":[]}]}"#;
+        let (_, _, _, summary) = map_collection(parse_collection(json).unwrap());
+        assert!(summary
+            .skipped
+            .iter()
+            .any(|s| s.contains("Folder \"Secured\"") && s.contains("folder-level auth")));
     }
 
     #[test]

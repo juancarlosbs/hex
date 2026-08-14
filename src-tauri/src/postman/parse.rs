@@ -4,6 +4,8 @@ use serde::Deserialize;
 pub struct PostmanCollection {
     pub info: PostmanInfo,
     pub item: Vec<PostmanItem>,
+    #[serde(default)]
+    pub auth: Option<PostmanAuth>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -18,6 +20,12 @@ pub struct PostmanItem {
     pub item: Option<Vec<PostmanItem>>,
     #[serde(default)]
     pub request: Option<PostmanRequest>,
+    /// Folder-level auth (inherited by children — reported, not propagated).
+    #[serde(default)]
+    pub auth: Option<PostmanAuth>,
+    /// Pre-request/test scripts — reported as skipped, never imported.
+    #[serde(default)]
+    pub event: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -31,6 +39,8 @@ pub struct PostmanRequest {
     pub body: Option<PostmanBody>,
     #[serde(default)]
     pub auth: Option<PostmanAuth>,
+    #[serde(default)]
+    pub event: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,18 +49,9 @@ pub enum PostmanUrl {
     Detailed {
         raw: String,
         #[serde(default)]
-        query: Vec<PostmanQueryParam>,
+        query: Vec<PostmanKeyValue>,
     },
     Raw(String),
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PostmanQueryParam {
-    pub key: String,
-    #[serde(default)]
-    pub value: String,
-    #[serde(default)]
-    pub disabled: bool,
 }
 
 #[derive(Debug, Deserialize)]

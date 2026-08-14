@@ -41,8 +41,7 @@ export function BodyTab({ requestId }: BodyTabProps) {
       </div>
 
       <div className="flex-1 min-h-0">
-        {body.mode === "json" && <BodyJsonEditor value={body.json} onChange={(v) => setBodyJson(requestId, v)} />}
-        {body.mode === "raw" && <BodyJsonEditor value={body.json} onChange={(v) => setBodyJson(requestId, v)} />}
+        {(body.mode === "json" || body.mode === "raw") && <BodyJsonEditor value={body.json} onChange={(v) => setBodyJson(requestId, v)} />}
         {body.mode === "form-urlencoded" && <BodyFormEditor requestId={requestId} multipart={false} />}
         {body.mode === "form-multipart" && <BodyFormEditor requestId={requestId} multipart={true} />}
       </div>

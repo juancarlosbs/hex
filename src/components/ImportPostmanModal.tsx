@@ -2,9 +2,17 @@ import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 import { FileJson, RefreshCw, X } from "lucide-react";
+import type { CollectionNode } from "../lib/api";
 import { cn } from "../lib/utils";
 import { usePostmanImportStore } from "../store/postmanImportStore";
 import { useWorkspaceStore } from "../store/workspaceStore";
+
+function countFolders(nodes: CollectionNode[]): number {
+  return nodes.reduce(
+    (n, node) => (node.type === "folder" ? n + 1 + countFolders(node.children) : n),
+    0
+  );
+}
 
 interface Props {
   open: boolean;
@@ -17,6 +25,7 @@ export function ImportPostmanModal({ open: isOpen, onClose }: Props) {
   const phase = usePostmanImportStore((s) => s.phase);
   const importCollection = usePostmanImportStore((s) => s.importCollection);
   const confirm = usePostmanImportStore((s) => s.confirm);
+  const setError = usePostmanImportStore((s) => s.setError);
   const reset = usePostmanImportStore((s) => s.reset);
   const workspaceId = useWorkspaceStore((s) => s.activeId);
 
@@ -52,8 +61,15 @@ export function ImportPostmanModal({ open: isOpen, onClose }: Props) {
       return;
     }
     if (!collectionPath || loading) return;
-    const collectionJson = await readTextFile(collectionPath);
-    const environmentJson = environmentPath ? await readTextFile(environmentPath) : null;
+    let collectionJson: string;
+    let environmentJson: string | null;
+    try {
+      collectionJson = await readTextFile(collectionPath);
+      environmentJson = environmentPath ? await readTextFile(environmentPath) : null;
+    } catch (e) {
+      setError(String(e));
+      return;
+    }
     importCollection(collectionJson, environmentJson);
   }
 
@@ -117,7 +133,8 @@ export function ImportPostmanModal({ open: isOpen, onClose }: Props) {
               <span className="text-[12px] font-semibold text-foreground">
                 {phase.preview.collectionName}
                 <span className="text-muted font-normal">
-                  {" "}· {phase.preview.requests.length} requests
+                  {" "}· {phase.preview.requests.length} requests ·{" "}
+                  {countFolders(phase.preview.nodes)} folders
                   {phase.preview.environment ? " · environment imported" : ""}
                 </span>
               </span>

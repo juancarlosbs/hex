@@ -22,8 +22,8 @@
   <message name="AddIn"><part name="parameters" element="tns:Add"/></message>
   <message name="SubtractIn"><part name="parameters" element="tns:Subtract"/></message>
   <portType name="CalcPort">
-    <operation name="Add"><input message="tns:AddIn"/></operation>
     <operation name="Subtract"><input message="tns:SubtractIn"/></operation>
+    <operation name="Add"><input message="tns:AddIn"/></operation>
   </portType>
   <binding name="CalcBinding" type="tns:CalcPort">
     <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>

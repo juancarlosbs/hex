@@ -1,6 +1,6 @@
 [package]
 name = "hex"
-version = "0.3.0"
+version = "0.4.0"
 description = "Native API client for REST and SOAP/WSDL"
 authors = ["Juan Carlos"]
 edition = "2021"

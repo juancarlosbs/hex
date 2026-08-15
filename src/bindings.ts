@@ -117,6 +117,22 @@ async confirmWsdlImport(workspaceId: string, preview: WsdlImportPreview) : Promi
     else return { status: "error", error: e  as any };
 }
 },
+async importPostmanCollection(collectionJson: string, environmentJson: string | null) : Promise<Result<PostmanImportPreview, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("import_postman_collection", { collectionJson, environmentJson }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async confirmPostmanImport(workspaceId: string, preview: PostmanImportPreview) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("confirm_postman_import", { workspaceId, preview }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getOperationSchema(wsdlUrl: string, inputElement: QName) : Promise<Result<SchemaNode, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_operation_schema", { wsdlUrl, inputElement }) };
@@ -319,11 +335,13 @@ export type HttpResponse = { status: number; statusText: string; timeMs: number;
  * Always false on live responses.
  */
 truncated?: boolean }
+export type ImportSummary = { skipped: string[] }
 export type KeyValueEntry = { id: string; key: string; value: string; description?: string | null; enabled: boolean; type?: string | null }
 export type MaxOccurs = { bounded: number } | "unbounded"
 export type NodeKind = { leaf: { xsdType: XsdType; enumValues: string[]; default: string | null; fixed: string | null } } | { sequence: SchemaNode[] } | { choice: SchemaNode[] } | "any"
 export type Occurs = { min: number; max: MaxOccurs }
 export type OperationRef = { name: string; endpoint: string; soapAction: string; soapVersion: SoapVersion; inputElement: QName }
+export type PostmanImportPreview = { collectionName: string; nodes: CollectionNode[]; requests: RequestFile[]; environment: Environment | null; summary: ImportSummary }
 export type QName = { namespace: string; local: string }
 export type RequestContent = ({ kind: "rest"; method: string; url: string } | { kind: "soap"; wsdlUrl: string; operation: string; endpoint?: string | null; soapAction?: string | null; soapVersion?: string | null; inputElement?: QName | null; orphan?: boolean | null }) & { params?: KeyValueEntry[]; headers?: KeyValueEntry[]; body?: BodyData | null; auth?: AuthData | null }
 export type RequestFile = ({ kind: "rest"; method: string; url: string } | { kind: "soap"; wsdlUrl: string; operation: string; endpoint?: string | null; soapAction?: string | null; soapVersion?: string | null; inputElement?: QName | null; orphan?: boolean | null }) & { id: string; name: string; params: KeyValueEntry[]; headers: KeyValueEntry[]; body?: BodyData | null; auth?: AuthData | null }

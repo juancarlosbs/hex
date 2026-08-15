@@ -29,7 +29,7 @@ export interface KeyValue {
   type?: "text" | "file";
 }
 
-export type BodyMode = "json" | "form-urlencoded" | "form-multipart";
+export type BodyMode = "json" | "form-urlencoded" | "form-multipart" | "raw";
 
 export interface RestBody {
   mode: BodyMode;

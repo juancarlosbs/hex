@@ -1,0 +1,553 @@
+use super::parse::{
+    PostmanAuth, PostmanBody, PostmanCollection, PostmanGraphql, PostmanItem, PostmanKeyValue,
+    PostmanRequest, PostmanUrl,
+};
+use crate::persistence::collection::{
+    AuthData, BodyData, CollectionNode, KeyValueEntry, RequestFile, RequestKind, RequestNode,
+};
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, specta::Type)]
+pub struct ImportSummary {
+    pub skipped: Vec<String>,
+}
+
+pub fn map_collection(
+    pc: PostmanCollection,
+) -> (String, Vec<CollectionNode>, Vec<RequestFile>, ImportSummary) {
+    let mut requests = Vec::new();
+    let mut summary = ImportSummary::default();
+    if pc.auth.is_some() {
+        summary.skipped.push(
+            "Collection-level auth is not imported — requests inheriting it need auth configured manually"
+                .into(),
+        );
+    }
+    let nodes = pc
+        .item
+        .into_iter()
+        .map(|item| map_item(item, &mut requests, &mut summary))
+        .collect();
+    (pc.info.name, nodes, requests, summary)
+}
+
+fn map_item(
+    item: PostmanItem,
+    requests: &mut Vec<RequestFile>,
+    summary: &mut ImportSummary,
+) -> CollectionNode {
+    if !item.event.is_empty() || item.request.as_ref().is_some_and(|r| !r.event.is_empty()) {
+        summary.skipped.push(format!(
+            "Item \"{}\": pre-request/test scripts are not imported",
+            item.name
+        ));
+    }
+    if let Some(children) = item.item {
+        if item.auth.is_some() {
+            summary.skipped.push(format!(
+                "Folder \"{}\": folder-level auth is not imported — requests inheriting it need auth configured manually",
+                item.name
+            ));
+        }
+        let mapped = children
+            .into_iter()
+            .map(|c| map_item(c, requests, summary))
+            .collect();
+        CollectionNode::Folder {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: item.name,
+            children: mapped,
+        }
+    } else if let Some(req) = item.request {
+        let id = uuid::Uuid::new_v4().to_string();
+        let (kind, params, headers, body, auth) = map_request(&item.name, req, summary);
+        requests.push(RequestFile {
+            id: id.clone(),
+            name: item.name.clone(),
+            kind: kind.clone(),
+            params,
+            headers,
+            body,
+            auth,
+        });
+        CollectionNode::Request(RequestNode {
+            id,
+            name: item.name,
+            kind,
+        })
+    } else {
+        summary.skipped.push(format!(
+            "Item \"{}\": neither a folder nor a request, skipped",
+            item.name
+        ));
+        CollectionNode::Folder {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: item.name,
+            children: vec![],
+        }
+    }
+}
+
+fn map_request(
+    name: &str,
+    req: PostmanRequest,
+    summary: &mut ImportSummary,
+) -> (
+    RequestKind,
+    Vec<KeyValueEntry>,
+    Vec<KeyValueEntry>,
+    Option<BodyData>,
+    Option<AuthData>,
+) {
+    let (url, params) = map_url(req.url);
+    let kind = RequestKind::Rest {
+        method: req.method,
+        url,
+    };
+    let mut headers: Vec<KeyValueEntry> = req.header.into_iter().map(map_key_value).collect();
+    let (body, raw_content_type) = match req.body.map(|b| map_body(name, b, summary)) {
+        Some((b, ct)) => (Some(b), ct),
+        None => (None, None),
+    };
+    // Postman's raw-body editor stores its language as `body.options.raw.language`,
+    // not as a header — add the equivalent Content-Type when the request didn't
+    // already carry one, so the imported request sends what Postman would have sent.
+    if let Some(content_type) = raw_content_type {
+        if !headers
+            .iter()
+            .any(|h| h.key.eq_ignore_ascii_case("content-type"))
+        {
+            headers.push(KeyValueEntry {
+                id: uuid::Uuid::new_v4().to_string(),
+                key: "Content-Type".into(),
+                value: content_type,
+                description: None,
+                enabled: true,
+                entry_type: None,
+            });
+        }
+    }
+    let auth = map_auth(name, req.auth, summary);
+    (kind, params, headers, body, auth)
+}
+
+fn map_url(url: Option<PostmanUrl>) -> (String, Vec<KeyValueEntry>) {
+    match url {
+        Some(PostmanUrl::Raw(raw)) => (raw, vec![]),
+        Some(PostmanUrl::Detailed { raw, query }) => {
+            let params: Vec<KeyValueEntry> = query.into_iter().map(map_key_value).collect();
+            // Postman mirrors the query string in both `raw` and `query`; keep
+            // `params` as the single source of truth so the engine (which appends
+            // params onto the URL) doesn't send each pair twice.
+            let raw = if params.is_empty() {
+                raw
+            } else {
+                raw.split('?').next().unwrap_or(&raw).to_string()
+            };
+            (raw, params)
+        }
+        None => (String::new(), vec![]),
+    }
+}
+
+fn map_key_value(kv: PostmanKeyValue) -> KeyValueEntry {
+    KeyValueEntry {
+        id: uuid::Uuid::new_v4().to_string(),
+        key: kv.key,
+        value: kv.value,
+        description: None,
+        enabled: !kv.disabled,
+        entry_type: None,
+    }
+}
+
+/// Returns the mapped body plus, for `raw` bodies whose Postman editor language
+/// is known, the equivalent Content-Type — the caller adds it as a header only
+/// when the request didn't already carry an explicit one.
+fn map_body(
+    name: &str,
+    body: PostmanBody,
+    summary: &mut ImportSummary,
+) -> (BodyData, Option<String>) {
+    match body.mode.as_str() {
+        "urlencoded" => (
+            BodyData {
+                mode: "form-urlencoded".into(),
+                json: String::new(),
+                form: body.urlencoded.into_iter().map(map_key_value).collect(),
+            },
+            None,
+        ),
+        "formdata" => (
+            BodyData {
+                mode: "form-multipart".into(),
+                json: String::new(),
+                form: body.formdata.into_iter().map(map_key_value).collect(),
+            },
+            None,
+        ),
+        "raw" => {
+            let content_type = body
+                .options
+                .as_ref()
+                .and_then(|o| o.raw.as_ref())
+                .and_then(|r| r.language.as_deref())
+                .and_then(raw_language_to_content_type);
+            (
+                BodyData {
+                    mode: "raw".into(),
+                    json: body.raw.unwrap_or_default(),
+                    form: vec![],
+                },
+                content_type,
+            )
+        }
+        "graphql" => {
+            let gql = body.graphql.unwrap_or(PostmanGraphql {
+                query: String::new(),
+                variables: String::new(),
+            });
+            let text = if gql.variables.trim().is_empty() {
+                gql.query
+            } else {
+                format!("{}\n\n# variables:\n# {}", gql.query, gql.variables)
+            };
+            (
+                BodyData {
+                    mode: "raw".into(),
+                    json: text,
+                    form: vec![],
+                },
+                None,
+            )
+        }
+        "file" => {
+            summary.skipped.push(format!(
+                "Request \"{name}\": file body not supported, body left empty"
+            ));
+            (
+                BodyData {
+                    mode: "raw".into(),
+                    json: String::new(),
+                    form: vec![],
+                },
+                None,
+            )
+        }
+        other => {
+            summary.skipped.push(format!(
+                "Request \"{name}\": unsupported body mode \"{other}\", body left empty"
+            ));
+            (
+                BodyData {
+                    mode: "raw".into(),
+                    json: String::new(),
+                    form: vec![],
+                },
+                None,
+            )
+        }
+    }
+}
+
+/// Maps Postman's raw-body editor language to the Content-Type it implies.
+/// Unknown/unlisted languages return `None` — no header is guessed.
+fn raw_language_to_content_type(language: &str) -> Option<String> {
+    let content_type = match language {
+        "json" => "application/json",
+        "xml" => "application/xml",
+        "html" => "text/html",
+        "javascript" => "application/javascript",
+        "text" => "text/plain",
+        _ => return None,
+    };
+    Some(content_type.to_string())
+}
+
+fn map_auth(
+    name: &str,
+    auth: Option<PostmanAuth>,
+    summary: &mut ImportSummary,
+) -> Option<AuthData> {
+    let auth = auth?;
+    let find = |params: &[super::parse::PostmanAuthParam], key: &str| {
+        params
+            .iter()
+            .find(|p| p.key == key)
+            .map(|p| p.value.clone())
+            .unwrap_or_default()
+    };
+    match auth.kind.as_str() {
+        "basic" => Some(AuthData::Basic {
+            username: find(&auth.basic, "username"),
+            password: find(&auth.basic, "password"),
+        }),
+        "bearer" => Some(AuthData::Bearer {
+            token: find(&auth.bearer, "token"),
+        }),
+        "apikey" => {
+            let add_to = find(&auth.apikey, "in");
+            Some(AuthData::Apikey {
+                key: find(&auth.apikey, "key"),
+                value: find(&auth.apikey, "value"),
+                add_to: if add_to == "query" {
+                    "query".into()
+                } else {
+                    "header".into()
+                },
+            })
+        }
+        "noauth" => None,
+        other => {
+            summary.skipped.push(format!(
+                "Request \"{name}\": {other} auth not supported, imported without auth"
+            ));
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::postman::parse::parse_collection;
+
+    const SAMPLE: &str = include_str!("testdata/sample_collection.json");
+
+    fn mapped() -> (Vec<CollectionNode>, Vec<RequestFile>, ImportSummary) {
+        let pc = parse_collection(SAMPLE).unwrap();
+        let (_, nodes, requests, summary) = map_collection(pc);
+        (nodes, requests, summary)
+    }
+
+    fn find<'a>(requests: &'a [RequestFile], name: &str) -> &'a RequestFile {
+        requests
+            .iter()
+            .find(|r| r.name == name)
+            .unwrap_or_else(|| panic!("request {name} not found"))
+    }
+
+    #[test]
+    fn maps_collection_name_and_counts() {
+        let pc = parse_collection(SAMPLE).unwrap();
+        let (name, nodes, requests, _summary) = map_collection(pc);
+        assert_eq!(name, "Sample API");
+        assert_eq!(nodes.len(), 2); // Auth, Bodies
+        assert_eq!(requests.len(), 10);
+    }
+
+    #[test]
+    fn maps_nested_folder_recursively() {
+        let (nodes, _, _) = mapped();
+        let CollectionNode::Folder { name, children, .. } = &nodes[0] else {
+            panic!("expected folder")
+        };
+        assert_eq!(name, "Auth");
+        let nested = children
+            .iter()
+            .find_map(|c| match c {
+                CollectionNode::Folder { name, children, .. } if name == "Nested" => Some(children),
+                _ => None,
+            })
+            .expect("Nested folder not found");
+        assert_eq!(nested.len(), 1);
+    }
+
+    #[test]
+    fn maps_basic_auth_and_disabled_header() {
+        let (_, requests, _) = mapped();
+        let req = find(&requests, "Basic Auth Request");
+        match &req.auth {
+            Some(AuthData::Basic { username, password }) => {
+                assert_eq!(username, "alice");
+                assert_eq!(password, "secret");
+            }
+            other => panic!("expected Basic auth, got {other:?}"),
+        }
+        assert_eq!(req.headers.len(), 2);
+        let off = req.headers.iter().find(|h| h.key == "X-Off").unwrap();
+        assert!(!off.enabled);
+    }
+
+    #[test]
+    fn maps_bearer_auth() {
+        let (_, requests, _) = mapped();
+        let req = find(&requests, "Bearer Request");
+        match &req.auth {
+            Some(AuthData::Bearer { token }) => assert_eq!(token, "tok123"),
+            other => panic!("expected Bearer auth, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn maps_apikey_auth() {
+        let (_, requests, _) = mapped();
+        let req = find(&requests, "ApiKey Request");
+        match &req.auth {
+            Some(AuthData::Apikey { key, value, add_to }) => {
+                assert_eq!(key, "X-Api-Key");
+                assert_eq!(value, "abc");
+                assert_eq!(add_to, "header");
+            }
+            other => panic!("expected Apikey auth, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn oauth2_auth_is_unsupported_and_reported() {
+        let (_, requests, summary) = mapped();
+        let req = find(&requests, "OAuth2 Request");
+        assert!(req.auth.is_none());
+        assert!(summary
+            .skipped
+            .iter()
+            .any(|s| s.contains("OAuth2 Request") && s.contains("oauth2")));
+    }
+
+    #[test]
+    fn maps_raw_body() {
+        let (_, requests, _) = mapped();
+        let body = find(&requests, "Raw JSON Body").body.clone().unwrap();
+        assert_eq!(body.mode, "raw");
+        assert_eq!(body.json, "{\"a\":1}");
+    }
+
+    #[test]
+    fn raw_body_gets_content_type_from_editor_language_when_absent() {
+        let (_, requests, _) = mapped();
+        let req = find(&requests, "Raw JSON Body");
+        let content_type = req
+            .headers
+            .iter()
+            .find(|h| h.key.eq_ignore_ascii_case("content-type"));
+        assert_eq!(
+            content_type.map(|h| h.value.as_str()),
+            Some("application/json")
+        );
+    }
+
+    #[test]
+    fn raw_body_content_type_does_not_override_an_explicit_header() {
+        let pc = parse_collection(
+            r#"{
+                "info": { "name": "X" },
+                "item": [{
+                    "name": "Explicit CT",
+                    "request": {
+                        "method": "POST",
+                        "url": { "raw": "https://api.example.com/x" },
+                        "header": [{ "key": "Content-Type", "value": "text/plain" }],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "hi",
+                            "options": { "raw": { "language": "json" } }
+                        }
+                    }
+                }]
+            }"#,
+        )
+        .unwrap();
+        let (_, _, requests, _) = map_collection(pc);
+        let headers = &requests[0].headers;
+        let content_types: Vec<&str> = headers
+            .iter()
+            .filter(|h| h.key.eq_ignore_ascii_case("content-type"))
+            .map(|h| h.value.as_str())
+            .collect();
+        assert_eq!(content_types, vec!["text/plain"]);
+    }
+
+    #[test]
+    fn maps_urlencoded_body() {
+        let (_, requests, _) = mapped();
+        let body = find(&requests, "Urlencoded Body").body.clone().unwrap();
+        assert_eq!(body.mode, "form-urlencoded");
+        assert_eq!(body.form.len(), 1);
+        assert_eq!(body.form[0].key, "a");
+    }
+
+    #[test]
+    fn maps_formdata_body() {
+        let (_, requests, _) = mapped();
+        let body = find(&requests, "Formdata Body").body.clone().unwrap();
+        assert_eq!(body.mode, "form-multipart");
+        assert_eq!(body.form.len(), 1);
+        assert_eq!(body.form[0].key, "file");
+    }
+
+    #[test]
+    fn maps_graphql_body_into_raw_mode() {
+        let (_, requests, _) = mapped();
+        let body = find(&requests, "GraphQL Body").body.clone().unwrap();
+        assert_eq!(body.mode, "raw");
+        assert!(body.json.contains("{ hello }"));
+        assert!(body.json.contains("{}")); // variables appended
+    }
+
+    #[test]
+    fn detailed_url_drops_the_query_string_mirrored_in_the_query_array() {
+        let (url, params) = map_url(Some(PostmanUrl::Detailed {
+            raw: "https://api.example.com/search?q=foo".into(),
+            query: vec![PostmanKeyValue {
+                key: "q".into(),
+                value: "foo".into(),
+                disabled: false,
+            }],
+        }));
+        assert_eq!(url, "https://api.example.com/search");
+        assert_eq!(params.len(), 1);
+        assert_eq!(params[0].key, "q");
+        assert_eq!(params[0].value, "foo");
+    }
+
+    #[test]
+    fn detailed_url_without_query_array_keeps_its_raw_query_string() {
+        let (url, params) = map_url(Some(PostmanUrl::Detailed {
+            raw: "https://api.example.com/search?q=foo".into(),
+            query: vec![],
+        }));
+        assert_eq!(url, "https://api.example.com/search?q=foo");
+        assert!(params.is_empty());
+    }
+
+    #[test]
+    fn scripts_are_reported_as_skipped() {
+        let json = r#"{"info":{"name":"C"},"item":[
+            {"name":"Scripted","event":[{"listen":"test","script":{"exec":[]}}],
+             "request":{"method":"GET","url":"https://api.dev"}}]}"#;
+        let (_, _, _, summary) = map_collection(parse_collection(json).unwrap());
+        assert!(summary
+            .skipped
+            .iter()
+            .any(|s| s.contains("Scripted") && s.contains("scripts are not imported")));
+    }
+
+    #[test]
+    fn collection_level_auth_is_reported_as_skipped() {
+        let json = r#"{"info":{"name":"C"},"auth":{"type":"bearer"},"item":[]}"#;
+        let (_, _, _, summary) = map_collection(parse_collection(json).unwrap());
+        assert!(summary
+            .skipped
+            .iter()
+            .any(|s| s.contains("Collection-level auth is not imported")));
+    }
+
+    #[test]
+    fn folder_level_auth_is_reported_as_skipped() {
+        let json = r#"{"info":{"name":"C"},"item":[
+            {"name":"Secured","auth":{"type":"bearer"},"item":[]}]}"#;
+        let (_, _, _, summary) = map_collection(parse_collection(json).unwrap());
+        assert!(summary
+            .skipped
+            .iter()
+            .any(|s| s.contains("Folder \"Secured\"") && s.contains("folder-level auth")));
+    }
+
+    #[test]
+    fn file_body_is_unsupported_and_reported() {
+        let (_, requests, summary) = mapped();
+        let body = find(&requests, "File Body").body.clone().unwrap();
+        assert_eq!(body.mode, "raw");
+        assert_eq!(body.json, "");
+        assert!(summary.skipped.iter().any(|s| s.contains("File Body")));
+    }
+}

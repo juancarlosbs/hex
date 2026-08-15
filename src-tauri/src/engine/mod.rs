@@ -105,6 +105,13 @@ fn build_request(spec: &SendSpec) -> Result<BuiltRequest, String> {
                 body = spec.body.json.clone().into_bytes();
             }
         }
+        "raw" => {
+            // no default Content-Type: raw bodies carry their own header
+            // (Postman imports map it into spec.headers)
+            if !spec.body.json.is_empty() {
+                body = spec.body.json.clone().into_bytes();
+            }
+        }
         "form-urlencoded" => {
             let pairs: Vec<(&str, &str)> = enabled(&spec.body.form)
                 .map(|kv| (kv.key.as_str(), kv.value.as_str()))
@@ -157,7 +164,7 @@ pub fn apply_env(
         kv.key = interp(&kv.key, &field)?;
         kv.value = interp(&kv.value, &field)?;
     }
-    if spec.body.mode == "json" {
+    if spec.body.mode == "json" || spec.body.mode == "raw" {
         spec.body.json = interp(&spec.body.json, "body")?;
     }
     if spec.body.mode == "form-urlencoded" {
@@ -308,6 +315,15 @@ mod tests {
         assert_eq!(s.params[0].value, "witch");
         assert_eq!(s.headers[0].value, "t1");
         assert_eq!(s.body.json, r#"{"h":"api.dev"}"#);
+    }
+
+    #[test]
+    fn apply_env_interpolates_raw_body() {
+        let mut s = spec("https://api.dev");
+        s.body.mode = "raw".into();
+        s.body.json = "<h>{{host}}</h>".into();
+        apply_env(&mut s, &test_env(&[("host", "api.dev")])).unwrap();
+        assert_eq!(s.body.json, "<h>api.dev</h>");
     }
 
     #[test]
@@ -494,6 +510,27 @@ mod tests {
         };
         let (_, url, _, _) = build(&s).unwrap();
         assert_eq!(url.as_str(), "https://api.dev/x?api_key=k1");
+    }
+
+    #[test]
+    fn sends_raw_body_without_a_default_content_type() {
+        let mut s = spec("https://api.dev");
+        s.body.mode = "raw".into();
+        s.body.json = "<xml>hi</xml>".into();
+        let (_, _, headers, body) = build(&s).unwrap();
+        assert_eq!(body, b"<xml>hi</xml>");
+        assert!(header(&headers, "content-type").is_none());
+    }
+
+    #[test]
+    fn raw_body_keeps_its_own_content_type_header() {
+        let mut s = spec("https://api.dev");
+        s.body.mode = "raw".into();
+        s.body.json = "<xml>hi</xml>".into();
+        s.headers = vec![kv("Content-Type", "text/xml", true)];
+        let (_, _, headers, _) = build(&s).unwrap();
+        assert_eq!(header(&headers, "content-type").unwrap(), "text/xml");
+        assert_eq!(header_count(&headers, "content-type"), 1);
     }
 
     #[test]

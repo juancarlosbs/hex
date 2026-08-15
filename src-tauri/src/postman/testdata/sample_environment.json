@@ -1,0 +1,7 @@
+{
+  "name": "Sample Env",
+  "values": [
+    { "key": "base_url", "value": "https://api.example.com", "enabled": true },
+    { "key": "disabled_var", "value": "nope", "enabled": false }
+  ]
+}

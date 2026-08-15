@@ -16,21 +16,22 @@ export function BodyTab({ requestId }: BodyTabProps) {
 
   if (!body) return null;
 
-  const isForm = body.mode !== "json";
+  const isForm = body.mode === "form-urlencoded" || body.mode === "form-multipart";
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
         <ContentTypeDropdown mode={body.mode} onChange={(m) => setBodyMode(requestId, m)} />
         <div className="flex-1" />
-        {isForm ? (
+        {isForm && (
           <Plus
             size={14}
             className="text-muted cursor-pointer hover:text-foreground"
             onClick={() => addFormRow(requestId)}
             aria-label="Add row"
           />
-        ) : (
+        )}
+        {body.mode === "json" && (
           <WandSparkles
             size={14}
             className="text-muted cursor-pointer hover:text-foreground"
@@ -41,7 +42,7 @@ export function BodyTab({ requestId }: BodyTabProps) {
       </div>
 
       <div className="flex-1 min-h-0">
-        {body.mode === "json" && <BodyJsonEditor value={body.json} onChange={(v) => setBodyJson(requestId, v)} />}
+        {(body.mode === "json" || body.mode === "raw") && <BodyJsonEditor value={body.json} onChange={(v) => setBodyJson(requestId, v)} />}
         {body.mode === "form-urlencoded" && <BodyFormEditor requestId={requestId} multipart={false} />}
         {body.mode === "form-multipart" && <BodyFormEditor requestId={requestId} multipart={true} />}
       </div>

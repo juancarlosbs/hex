@@ -608,3 +608,226 @@ pub fn delete_environment(
     let dir = data_dir(&app)?;
     env_store::delete_environment(&dir, &workspace_id, &id).map_err(|e| e.to_string())
 }
+
+// ── Postman import (mirrors WSDL's F2 preview/confirm pattern) ────────────
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PostmanImportPreview {
+    pub collection_name: String,
+    pub nodes: Vec<CollectionNode>,
+    pub requests: Vec<collection::RequestFile>,
+    pub environment: Option<Environment>,
+    pub summary: crate::postman::map::ImportSummary,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn import_postman_collection(
+    collection_json: String,
+    environment_json: Option<String>,
+) -> Result<PostmanImportPreview, String> {
+    let pc = crate::postman::parse::parse_collection(&collection_json)?;
+    let (collection_name, nodes, requests, summary) = crate::postman::map::map_collection(pc);
+    let environment = match environment_json {
+        Some(json) => {
+            let pe = crate::postman::parse::parse_environment(&json)?;
+            Some(crate::postman::map_environment::map_environment(pe))
+        }
+        None => None,
+    };
+    Ok(PostmanImportPreview {
+        collection_name,
+        nodes,
+        requests,
+        environment,
+        summary,
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn confirm_postman_import(
+    app: tauri::AppHandle,
+    workspace_id: String,
+    preview: PostmanImportPreview,
+) -> Result<(), String> {
+    let dir = data_dir(&app)?;
+    write_postman_import(&dir, &workspace_id, &preview)
+}
+
+fn write_postman_import(
+    dir: &std::path::Path,
+    workspace_id: &str,
+    preview: &PostmanImportPreview,
+) -> Result<(), String> {
+    let col = collection::create_collection(dir, workspace_id, &preview.collection_name)
+        .map_err(|e| e.to_string())?;
+    let CollectionNode::Folder { id: root_id, .. } = &col else {
+        return Err("created collection is not a folder".into());
+    };
+    write_postman_nodes(
+        dir,
+        workspace_id,
+        vec![root_id.clone()],
+        &preview.nodes,
+        &preview.requests,
+    )?;
+    if let Some(env) = &preview.environment {
+        env_store::save_environment(dir, workspace_id, env).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn write_postman_nodes(
+    dir: &std::path::Path,
+    workspace_id: &str,
+    parent_path: Vec<String>,
+    nodes: &[CollectionNode],
+    requests: &[collection::RequestFile],
+) -> Result<(), String> {
+    for node in nodes {
+        match node {
+            CollectionNode::Folder { name, children, .. } => {
+                let created =
+                    collection::create_folder(dir, workspace_id, parent_path.clone(), name)
+                        .map_err(|e| e.to_string())?;
+                let CollectionNode::Folder { id: new_id, .. } = created else {
+                    return Err("created folder is not a folder".into());
+                };
+                let mut child_path = parent_path.clone();
+                child_path.push(new_id);
+                write_postman_nodes(dir, workspace_id, child_path, children, requests)?;
+            }
+            CollectionNode::Request(collection::RequestNode { id, name, kind }) => {
+                let rf = requests.iter().find(|r| &r.id == id).ok_or_else(|| {
+                    format!("import data inconsistency: request \"{name}\" not found")
+                })?;
+                let created = collection::create_request(
+                    dir,
+                    workspace_id,
+                    parent_path.clone(),
+                    name,
+                    kind.clone(),
+                )
+                .map_err(|e| e.to_string())?;
+                let CollectionNode::Request(collection::RequestNode { id: new_id, .. }) = created
+                else {
+                    return Err("created request is not a request".into());
+                };
+                let mut req_path = parent_path.clone();
+                req_path.push(new_id);
+                collection::update_request(
+                    dir,
+                    workspace_id,
+                    req_path,
+                    collection::RequestContent {
+                        kind: kind.clone(),
+                        params: rf.params.clone(),
+                        headers: rf.headers.clone(),
+                        body: rf.body.clone(),
+                        auth: rf.auth.clone(),
+                    },
+                )
+                .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod postman_import_tests {
+    use super::*;
+    use std::fs;
+
+    fn tmp(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("hex-postman-cmd-test-{name}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    const SAMPLE: &str = include_str!("../postman/testdata/sample_collection.json");
+    const SAMPLE_ENV: &str = include_str!("../postman/testdata/sample_environment.json");
+
+    fn find_path(
+        nodes: &[CollectionNode],
+        target: &str,
+        path: &mut Vec<String>,
+    ) -> Option<Vec<String>> {
+        for node in nodes {
+            match node {
+                CollectionNode::Folder { id, name, children } => {
+                    path.push(id.clone());
+                    if name == target {
+                        return Some(path.clone());
+                    }
+                    if let Some(found) = find_path(children, target, path) {
+                        return Some(found);
+                    }
+                    path.pop();
+                }
+                CollectionNode::Request(collection::RequestNode { id, name, .. }) => {
+                    if name == target {
+                        path.push(id.clone());
+                        return Some(path.clone());
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn confirm_writes_nested_folders_and_requests_to_disk() {
+        let dir = tmp("confirm");
+        let pc = crate::postman::parse::parse_collection(SAMPLE).unwrap();
+        let (collection_name, nodes, requests, summary) = crate::postman::map::map_collection(pc);
+        let preview = PostmanImportPreview {
+            collection_name,
+            nodes,
+            requests,
+            environment: None,
+            summary,
+        };
+        write_postman_import(&dir, "ws1", &preview).unwrap();
+
+        let cols = collection::list_collections(&dir, "ws1").unwrap();
+        assert_eq!(cols.len(), 1);
+
+        let path =
+            find_path(&cols, "Basic Auth Request", &mut vec![]).expect("request not found on disk");
+        let rf = collection::get_request(&dir, "ws1", path).unwrap();
+        match rf.auth {
+            Some(collection::AuthData::Basic { username, password }) => {
+                assert_eq!(username, "alice");
+                assert_eq!(password, "secret");
+            }
+            other => panic!("expected Basic auth, got {other:?}"),
+        }
+
+        let deep_path =
+            find_path(&cols, "Deep Request", &mut vec![]).expect("nested request not found");
+        assert_eq!(deep_path.len(), 4); // collection root > Auth > Nested > Deep Request
+    }
+
+    #[test]
+    fn confirm_writes_environment_when_present() {
+        let dir = tmp("env");
+        let pe = crate::postman::parse::parse_environment(SAMPLE_ENV).unwrap();
+        let environment = crate::postman::map_environment::map_environment(pe);
+        let preview = PostmanImportPreview {
+            collection_name: "Empty".into(),
+            nodes: vec![],
+            requests: vec![],
+            environment: Some(environment),
+            summary: crate::postman::map::ImportSummary::default(),
+        };
+        write_postman_import(&dir, "ws1", &preview).unwrap();
+
+        let list = env_store::list_environments(&dir, "ws1").unwrap();
+        assert_eq!(list.environments.len(), 1);
+        assert_eq!(list.environments[0].name, "Sample Env");
+    }
+}

@@ -23,14 +23,15 @@ export function BodyTab({ requestId }: BodyTabProps) {
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
         <ContentTypeDropdown mode={body.mode} onChange={(m) => setBodyMode(requestId, m)} />
         <div className="flex-1" />
-        {isForm ? (
+        {isForm && (
           <Plus
             size={14}
             className="text-muted cursor-pointer hover:text-foreground"
             onClick={() => addFormRow(requestId)}
             aria-label="Add row"
           />
-        ) : (
+        )}
+        {body.mode === "json" && (
           <WandSparkles
             size={14}
             className="text-muted cursor-pointer hover:text-foreground"

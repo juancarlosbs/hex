@@ -69,11 +69,25 @@ pub struct PostmanBody {
     #[serde(default)]
     pub raw: Option<String>,
     #[serde(default)]
+    pub options: Option<PostmanBodyOptions>,
+    #[serde(default)]
     pub urlencoded: Vec<PostmanKeyValue>,
     #[serde(default)]
     pub formdata: Vec<PostmanKeyValue>,
     #[serde(default)]
     pub graphql: Option<PostmanGraphql>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PostmanBodyOptions {
+    #[serde(default)]
+    pub raw: Option<PostmanRawOptions>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PostmanRawOptions {
+    #[serde(default)]
+    pub language: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

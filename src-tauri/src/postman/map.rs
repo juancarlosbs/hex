@@ -103,8 +103,29 @@ fn map_request(
         method: req.method,
         url,
     };
-    let headers = req.header.into_iter().map(map_key_value).collect();
-    let body = req.body.map(|b| map_body(name, b, summary));
+    let mut headers: Vec<KeyValueEntry> = req.header.into_iter().map(map_key_value).collect();
+    let (body, raw_content_type) = match req.body.map(|b| map_body(name, b, summary)) {
+        Some((b, ct)) => (Some(b), ct),
+        None => (None, None),
+    };
+    // Postman's raw-body editor stores its language as `body.options.raw.language`,
+    // not as a header — add the equivalent Content-Type when the request didn't
+    // already carry one, so the imported request sends what Postman would have sent.
+    if let Some(content_type) = raw_content_type {
+        if !headers
+            .iter()
+            .any(|h| h.key.eq_ignore_ascii_case("content-type"))
+        {
+            headers.push(KeyValueEntry {
+                id: uuid::Uuid::new_v4().to_string(),
+                key: "Content-Type".into(),
+                value: content_type,
+                description: None,
+                enabled: true,
+                entry_type: None,
+            });
+        }
+    }
     let auth = map_auth(name, req.auth, summary);
     (kind, params, headers, body, auth)
 }
@@ -139,23 +160,47 @@ fn map_key_value(kv: PostmanKeyValue) -> KeyValueEntry {
     }
 }
 
-fn map_body(name: &str, body: PostmanBody, summary: &mut ImportSummary) -> BodyData {
+/// Returns the mapped body plus, for `raw` bodies whose Postman editor language
+/// is known, the equivalent Content-Type — the caller adds it as a header only
+/// when the request didn't already carry an explicit one.
+fn map_body(
+    name: &str,
+    body: PostmanBody,
+    summary: &mut ImportSummary,
+) -> (BodyData, Option<String>) {
     match body.mode.as_str() {
-        "urlencoded" => BodyData {
-            mode: "form-urlencoded".into(),
-            json: String::new(),
-            form: body.urlencoded.into_iter().map(map_key_value).collect(),
-        },
-        "formdata" => BodyData {
-            mode: "form-multipart".into(),
-            json: String::new(),
-            form: body.formdata.into_iter().map(map_key_value).collect(),
-        },
-        "raw" => BodyData {
-            mode: "raw".into(),
-            json: body.raw.unwrap_or_default(),
-            form: vec![],
-        },
+        "urlencoded" => (
+            BodyData {
+                mode: "form-urlencoded".into(),
+                json: String::new(),
+                form: body.urlencoded.into_iter().map(map_key_value).collect(),
+            },
+            None,
+        ),
+        "formdata" => (
+            BodyData {
+                mode: "form-multipart".into(),
+                json: String::new(),
+                form: body.formdata.into_iter().map(map_key_value).collect(),
+            },
+            None,
+        ),
+        "raw" => {
+            let content_type = body
+                .options
+                .as_ref()
+                .and_then(|o| o.raw.as_ref())
+                .and_then(|r| r.language.as_deref())
+                .and_then(raw_language_to_content_type);
+            (
+                BodyData {
+                    mode: "raw".into(),
+                    json: body.raw.unwrap_or_default(),
+                    form: vec![],
+                },
+                content_type,
+            )
+        }
         "graphql" => {
             let gql = body.graphql.unwrap_or(PostmanGraphql {
                 query: String::new(),
@@ -166,33 +211,56 @@ fn map_body(name: &str, body: PostmanBody, summary: &mut ImportSummary) -> BodyD
             } else {
                 format!("{}\n\n# variables:\n# {}", gql.query, gql.variables)
             };
-            BodyData {
-                mode: "raw".into(),
-                json: text,
-                form: vec![],
-            }
+            (
+                BodyData {
+                    mode: "raw".into(),
+                    json: text,
+                    form: vec![],
+                },
+                None,
+            )
         }
         "file" => {
             summary.skipped.push(format!(
                 "Request \"{name}\": file body not supported, body left empty"
             ));
-            BodyData {
-                mode: "raw".into(),
-                json: String::new(),
-                form: vec![],
-            }
+            (
+                BodyData {
+                    mode: "raw".into(),
+                    json: String::new(),
+                    form: vec![],
+                },
+                None,
+            )
         }
         other => {
             summary.skipped.push(format!(
                 "Request \"{name}\": unsupported body mode \"{other}\", body left empty"
             ));
-            BodyData {
-                mode: "raw".into(),
-                json: String::new(),
-                form: vec![],
-            }
+            (
+                BodyData {
+                    mode: "raw".into(),
+                    json: String::new(),
+                    form: vec![],
+                },
+                None,
+            )
         }
     }
+}
+
+/// Maps Postman's raw-body editor language to the Content-Type it implies.
+/// Unknown/unlisted languages return `None` — no header is guessed.
+fn raw_language_to_content_type(language: &str) -> Option<String> {
+    let content_type = match language {
+        "json" => "application/json",
+        "xml" => "application/xml",
+        "html" => "text/html",
+        "javascript" => "application/javascript",
+        "text" => "text/plain",
+        _ => return None,
+    };
+    Some(content_type.to_string())
 }
 
 fn map_auth(
@@ -341,6 +409,51 @@ mod tests {
         let body = find(&requests, "Raw JSON Body").body.clone().unwrap();
         assert_eq!(body.mode, "raw");
         assert_eq!(body.json, "{\"a\":1}");
+    }
+
+    #[test]
+    fn raw_body_gets_content_type_from_editor_language_when_absent() {
+        let (_, requests, _) = mapped();
+        let req = find(&requests, "Raw JSON Body");
+        let content_type = req
+            .headers
+            .iter()
+            .find(|h| h.key.eq_ignore_ascii_case("content-type"));
+        assert_eq!(
+            content_type.map(|h| h.value.as_str()),
+            Some("application/json")
+        );
+    }
+
+    #[test]
+    fn raw_body_content_type_does_not_override_an_explicit_header() {
+        let pc = parse_collection(
+            r#"{
+                "info": { "name": "X" },
+                "item": [{
+                    "name": "Explicit CT",
+                    "request": {
+                        "method": "POST",
+                        "url": { "raw": "https://api.example.com/x" },
+                        "header": [{ "key": "Content-Type", "value": "text/plain" }],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "hi",
+                            "options": { "raw": { "language": "json" } }
+                        }
+                    }
+                }]
+            }"#,
+        )
+        .unwrap();
+        let (_, _, requests, _) = map_collection(pc);
+        let headers = &requests[0].headers;
+        let content_types: Vec<&str> = headers
+            .iter()
+            .filter(|h| h.key.eq_ignore_ascii_case("content-type"))
+            .map(|h| h.value.as_str())
+            .collect();
+        assert_eq!(content_types, vec!["text/plain"]);
     }
 
     #[test]

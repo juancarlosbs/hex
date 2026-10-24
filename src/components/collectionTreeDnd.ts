@@ -134,3 +134,21 @@ export function resolveDrop(
     index: proj.index,
   };
 }
+
+/** Prunes the tree to requests whose name contains `query` (case-insensitive); `expanded` = kept folders. */
+export function filterTree(
+  nodes: CollectionNode[],
+  query: string
+): { tree: CollectionNode[]; expanded: Set<string> } {
+  const q = query.trim().toLowerCase();
+  const expanded = new Set<string>();
+  const prune = (list: CollectionNode[]): CollectionNode[] =>
+    list.flatMap((n): CollectionNode[] => {
+      if (n.type === "request") return n.name.toLowerCase().includes(q) ? [n] : [];
+      const children = prune(n.children);
+      if (children.length === 0) return [];
+      expanded.add(n.id);
+      return [{ ...n, children }];
+    });
+  return { tree: prune(nodes), expanded };
+}

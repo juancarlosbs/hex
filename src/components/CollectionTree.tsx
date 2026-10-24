@@ -22,6 +22,7 @@ import type { CollectionNode } from "../lib/api";
 import {
   FlatItem,
   INDENT,
+  filterTree,
   flattenTree,
   getProjection,
   pendingInsertIndex,
@@ -462,12 +463,19 @@ export interface CollectionTreeHandle {
   startCreateRequest: () => void;
 }
 
-export const CollectionTree = forwardRef<CollectionTreeHandle, { workspaceId: string }>(
-  function CollectionTree({ workspaceId }, ref) {
-    const collections = useCollectionStore((s) => s.collections);
+export const CollectionTree = forwardRef<CollectionTreeHandle, { workspaceId: string; filter?: string }>(
+  function CollectionTree({ workspaceId, filter = "" }, ref) {
+    const allCollections = useCollectionStore((s) => s.collections);
     const reorder = useCollectionStore((s) => s.reorder);
     const move = useCollectionStore((s) => s.move);
     const updatePathsUnder = useRequestStore((s) => s.updatePathsUnder);
+
+    const filtering = filter.trim() !== "";
+    const filtered = useMemo(
+      () => (filtering ? filterTree(allCollections, filter) : null),
+      [allCollections, filter, filtering]
+    );
+    const collections = filtered ? filtered.tree : allCollections;
 
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
     const [pendingCreation, setPendingCreation] = useState<{
@@ -480,11 +488,12 @@ export const CollectionTree = forwardRef<CollectionTreeHandle, { workspaceId: st
 
     // hide the dragged folder's subtree so it can't be dropped into itself
     const hidden = useMemo(() => {
+      if (filtering) return new Set<string>(); // matching ancestors are all shown expanded
       if (!activeId) return collapsed;
       const s = new Set(collapsed);
       s.add(activeId);
       return s;
-    }, [collapsed, activeId]);
+    }, [collapsed, activeId, filtering]);
 
     const flatItems = useMemo(() => flattenTree(collections, hidden), [collections, hidden]);
     const projected =
@@ -492,7 +501,9 @@ export const CollectionTree = forwardRef<CollectionTreeHandle, { workspaceId: st
 
     // distance constraint: without it, any pointerdown (incl. bubbled from context-menu
     // buttons) activates a drag and pointer capture swallows the click
-    const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+    const sensors = useSensors(
+      ...(filtering ? [] : [useSensor(PointerSensor, { activationConstraint: { distance: 5 } })])
+    );
 
     useImperativeHandle(ref, () => ({
       startCreate: () => setPendingCreation({ parentPath: [], kind: "folder" }),
@@ -564,7 +575,7 @@ export const CollectionTree = forwardRef<CollectionTreeHandle, { workspaceId: st
         key={item.id}
         item={item}
         depth={item.id === activeId && projected ? projected.depth : item.depth}
-        isCollapsed={collapsed.has(item.id)}
+        isCollapsed={!filtering && collapsed.has(item.id)}
         onToggle={toggle}
         workspaceId={workspaceId}
         onPendingCreate={handlePendingCreate}
@@ -583,6 +594,10 @@ export const CollectionTree = forwardRef<CollectionTreeHandle, { workspaceId: st
           onCreationDone={() => setPendingCreation(null)}
         />
       );
+    }
+
+    if (filtering && flatItems.length === 0) {
+      return <div className="px-2 py-3 text-[12px] text-sidebar-muted">Nenhum request encontrado</div>;
     }
 
     return (

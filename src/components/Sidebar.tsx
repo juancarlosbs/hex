@@ -9,6 +9,7 @@ import { useWorkspaceStore } from "../store/workspaceStore";
 export function Sidebar() {
   const workspaceId = useWorkspaceStore((s) => s.activeId);
   const treeRef = useRef<CollectionTreeHandle>(null);
+  const [filter, setFilter] = useState("");
   const [importOpen, setImportOpen] = useState(false);
   const [postmanImportOpen, setPostmanImportOpen] = useState(false);
 
@@ -59,13 +60,21 @@ export function Sidebar() {
       <div className="px-3 pb-2">
         <div className="flex items-center gap-2 px-[9px] py-[7px] rounded-[6px] bg-background border border-border cursor-text">
           <Search size={13} className="text-sidebar-muted shrink-0" />
-          <span className="text-[12px] text-sidebar-muted">Filter requests</span>
+          <input
+            className="flex-1 min-w-0 bg-transparent text-[12px] text-foreground placeholder:text-sidebar-muted outline-none"
+            placeholder="Filter requests"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setFilter("");
+            }}
+          />
         </div>
       </div>
 
       {/* Tree */}
       <div className="flex-1 overflow-y-auto px-[6px] py-1">
-        <CollectionTree ref={treeRef} workspaceId={workspaceId} />
+        <CollectionTree ref={treeRef} workspaceId={workspaceId} filter={filter} />
       </div>
 
       {/* Footer */}

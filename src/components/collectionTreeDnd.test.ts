@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { CollectionNode } from "../lib/api";
 import {
+  filterTree,
   flattenTree,
   getProjection,
   childrenOf,
@@ -136,5 +137,21 @@ describe("resolveDrop", () => {
       toParentPath: ["col", "f2"],
       index: 1,
     });
+  });
+});
+
+describe("filterTree", () => {
+  it("keeps matching requests and their ancestors, case-insensitively", () => {
+    const { tree: t, expanded } = filterTree(tree, "R2");
+    expect(flattenTree(t, new Set()).map((i) => i.id)).toEqual(["col", "f1", "r2"]);
+    expect([...expanded].sort()).toEqual(["col", "f1"]);
+  });
+  it("returns an empty tree when nothing matches", () => {
+    const { tree: t, expanded } = filterTree(tree, "zzz");
+    expect(t).toEqual([]);
+    expect(expanded.size).toBe(0);
+  });
+  it("does not match folder names", () => {
+    expect(filterTree(tree, "f1").tree).toEqual([]);
   });
 });
